@@ -7,6 +7,19 @@
 # General application configuration
 import Config
 
+config :jump_email_categorization, :scopes,
+  user: [
+    default: true,
+    module: JumpEmailCategorization.Accounts.Scope,
+    assign_key: :current_scope,
+    access_path: [:user, :id],
+    schema_key: :user_id,
+    schema_type: :id,
+    schema_table: :users,
+    test_data_fixture: JumpEmailCategorization.AccountsFixtures,
+    test_setup_helper: :register_and_log_in_user
+  ]
+
 config :jump_email_categorization,
   ecto_repos: [JumpEmailCategorization.Repo],
   generators: [timestamp_type: :utc_datetime]

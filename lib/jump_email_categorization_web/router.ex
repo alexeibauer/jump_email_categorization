@@ -1,6 +1,8 @@
 defmodule JumpEmailCategorizationWeb.Router do
   use JumpEmailCategorizationWeb, :router
 
+  import JumpEmailCategorizationWeb.UserAuth
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -8,6 +10,7 @@ defmodule JumpEmailCategorizationWeb.Router do
     plug :put_root_layout, html: {JumpEmailCategorizationWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :fetch_current_scope_for_user
   end
 
   pipeline :api do
@@ -15,7 +18,7 @@ defmodule JumpEmailCategorizationWeb.Router do
   end
 
   scope "/", JumpEmailCategorizationWeb do
-    pipe_through :browser
+    pipe_through [:browser, :require_authenticated_user]
 
     get "/", PageController, :home
   end
@@ -40,5 +43,31 @@ defmodule JumpEmailCategorizationWeb.Router do
       live_dashboard "/dashboard", metrics: JumpEmailCategorizationWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
+  end
+
+  ## Authentication routes
+
+  scope "/", JumpEmailCategorizationWeb do
+    pipe_through [:browser, :redirect_if_user_is_authenticated]
+
+    get "/users/register", UserRegistrationController, :new
+    post "/users/register", UserRegistrationController, :create
+  end
+
+  scope "/", JumpEmailCategorizationWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    get "/users/settings", UserSettingsController, :edit
+    put "/users/settings", UserSettingsController, :update
+    get "/users/settings/confirm-email/:token", UserSettingsController, :confirm_email
+  end
+
+  scope "/", JumpEmailCategorizationWeb do
+    pipe_through [:browser]
+
+    get "/users/log-in", UserSessionController, :new
+    get "/users/log-in/:token", UserSessionController, :confirm
+    post "/users/log-in", UserSessionController, :create
+    delete "/users/log-out", UserSessionController, :delete
   end
 end
