@@ -94,6 +94,7 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
   attr :category_form, :map, default: nil
   attr :show_delete_category_modal, :boolean, default: false
   attr :category_to_delete, :string, default: ""
+  attr :loading_message, :string, default: nil
 
   def email_list(assigns) do
     ~H"""
@@ -142,34 +143,43 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
         </p>
       </div>
       <div class="flex-1 overflow-y-auto">
-        <div :for={email <- @emails} class="border-b border-base-300">
-          <div class={[
-            "p-4 hover:bg-base-200 transition-colors",
-            @selected_email_id == email.id && "bg-base-200"
-          ]}>
-            <div class="flex gap-3">
-              <label class="cursor-pointer">
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-sm mt-1"
-                  checked={email.id in @selected_for_unsubscribe}
-                  phx-click="toggle-email-selection"
+        <%= if @loading_message do %>
+          <div class="flex items-center justify-center h-full">
+            <div class="text-center">
+              <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
+              <p class="text-lg text-base-content/70">{@loading_message}</p>
+            </div>
+          </div>
+        <% else %>
+          <div :for={email <- @emails} class="border-b border-base-300">
+            <div class={[
+              "p-4 hover:bg-base-200 transition-colors",
+              @selected_email_id == email.id && "bg-base-200"
+            ]}>
+              <div class="flex gap-3">
+                <label class="cursor-pointer">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-sm mt-1"
+                    checked={email.id in @selected_for_unsubscribe}
+                    phx-click="toggle-email-selection"
+                    phx-value-id={email.id}
+                  />
+                </label>
+                <div
+                  class="flex-1 cursor-pointer"
+                  phx-click="select-email"
                   phx-value-id={email.id}
-                />
-              </label>
-              <div
-                class="flex-1 cursor-pointer"
-                phx-click="select-email"
-                phx-value-id={email.id}
-              >
-                <h3 class="font-bold text-base mb-2">{email.subject}</h3>
-                <p class="text-sm text-base-content/70 line-clamp-2">
-                  {email.summary}
-                </p>
+                >
+                  <h3 class="font-bold text-base mb-2">{email.subject}</h3>
+                  <p class="text-sm text-base-content/70 line-clamp-2">
+                    {email.summary}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        <% end %>
       </div>
 
       <%!-- Add Category Modal --%>
@@ -253,22 +263,22 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
             Any email under this category will be re-categorized, or listed as "Uncategorized" if no match is found.
           </p>
           <div class="modal-action">
-          <a
-          style="margin-top: 5px;margin-right: 10px;"
-          href="#"
-          class="link link-hover"
-          phx-click="cancel-delete-category"
-          >
-          Cancel
-          </a>
-          <button
-            type="button"
-            class="btn btn-error"
-            phx-click="confirm-delete-category"
-            phx-value-category={@category_to_delete}
-          >
-            Yes
-          </button>
+            <a
+              style="margin-top: 5px;margin-right: 10px;"
+              href="#"
+              class="link link-hover"
+              phx-click="cancel-delete-category"
+            >
+              Cancel
+            </a>
+            <button
+              type="button"
+              class="btn btn-error"
+              phx-click="confirm-delete-category"
+              phx-value-category={@category_to_delete}
+            >
+              Yes
+            </button>
           </div>
         </div>
         <div class="modal-backdrop" phx-click="cancel-delete-category"></div>

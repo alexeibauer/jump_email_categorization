@@ -26,10 +26,12 @@ defmodule JumpEmailCategorizationWeb.Router do
     end
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", JumpEmailCategorizationWeb do
-  #   pipe_through :api
-  # end
+  # Gmail Pub/Sub webhook endpoint
+  scope "/api", JumpEmailCategorizationWeb do
+    pipe_through :api
+
+    post "/webhooks/gmail", GmailWebhookController, :webhook
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:jump_email_categorization, :dev_routes) do

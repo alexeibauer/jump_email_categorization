@@ -5,7 +5,9 @@ defmodule JumpEmailCategorization.Gmail do
 
   import Ecto.Query, warn: false
   alias JumpEmailCategorization.Repo
-  alias JumpEmailCategorization.Gmail.GmailAccount
+  alias JumpEmailCategorization.Gmail.{GmailAccount, EmailFetcher, ApiClient}
+
+  require Logger
 
   @doc """
   Returns the list of gmail accounts for a user.
@@ -31,6 +33,7 @@ defmodule JumpEmailCategorization.Gmail do
 
   @doc """
   Creates or updates a gmail_account from OAuth data.
+  Automatically triggers email fetching for new or updated accounts.
   """
   def create_or_update_gmail_account(user_id, oauth_data) do
     attrs = %{
@@ -45,16 +48,34 @@ defmodule JumpEmailCategorization.Gmail do
       scopes: oauth_data["scopes"] || []
     }
 
-    case get_gmail_account_by_google_id(user_id, oauth_data["sub"]) do
-      nil ->
-        %GmailAccount{}
-        |> GmailAccount.changeset(attrs)
-        |> Repo.insert()
+    result =
+      case get_gmail_account_by_google_id(user_id, oauth_data["sub"]) do
+        nil ->
+          %GmailAccount{}
+          |> GmailAccount.changeset(attrs)
+          |> Repo.insert()
 
-      existing_account ->
-        existing_account
-        |> GmailAccount.changeset(attrs)
-        |> Repo.update()
+        existing_account ->
+          existing_account
+          |> GmailAccount.changeset(attrs)
+          |> Repo.update()
+      end
+
+    # Start async email fetching for the account
+    case result do
+      {:ok, account} ->
+        Logger.info("Starting email fetch for new/updated account: #{account.email}")
+
+        # Start async fetch
+        EmailFetcher.start_fetch(account)
+
+        # Setup Gmail push notifications
+        setup_gmail_push_notifications(account)
+
+        {:ok, account}
+
+      error ->
+        error
     end
   end
 
@@ -62,33 +83,60 @@ defmodule JumpEmailCategorization.Gmail do
   Deletes a gmail_account.
   """
   def delete_gmail_account(%GmailAccount{} = gmail_account) do
+    # TODO: Unsubscribe from Gmail Pub/Sub notifications and delete the topic
+    # Call ApiClient.stop_push_notifications(gmail_account)
+    # Delete the Pub/Sub topic from Google Cloud
+
     Repo.delete(gmail_account)
   end
 
-  # TODO: Implement email fetching from Gmail API
   @doc """
   Fetches emails from Gmail for a given account.
-  This is a placeholder - implement Gmail API integration here.
+  This delegates to EmailFetcher for async processing.
   """
-  def fetch_emails(%GmailAccount{} = _account) do
-    # TODO: Use the Gmail API to fetch emails
-    # 1. Check if access_token is expired, refresh if needed
-    # 2. Call Gmail API with the access_token
-    # 3. Parse and store emails in the database
-    # 4. Return the fetched emails
-    {:ok, []}
+  def fetch_emails(%GmailAccount{} = account) do
+    EmailFetcher.start_fetch(account)
   end
 
   @doc """
-  Refreshes the access token for a Gmail account.
-  This is a placeholder - implement token refresh logic here.
+  Checks if an account is currently fetching emails.
   """
-  def refresh_access_token(%GmailAccount{} = _account) do
-    # TODO: Implement OAuth token refresh
-    # 1. Use the refresh_token to get a new access_token
-    # 2. Update the account with the new token
-    # 3. Update token_expires_at
-    {:ok, nil}
+  def account_fetching_emails?(account_id) do
+    # Check if there's an active task for this account
+    # This is a simplified check - you might want to use a more sophisticated
+    # state management solution like GenServer or ETS for production
+    Phoenix.PubSub.broadcast(
+      JumpEmailCategorization.PubSub,
+      "gmail_account:#{account_id}",
+      {:check_status}
+    )
+  end
+
+  @doc """
+  Sets up Gmail push notifications via Pub/Sub.
+  """
+  def setup_gmail_push_notifications(%GmailAccount{} = account) do
+    # TODO: Configure your Google Cloud Pub/Sub topic
+    # Format: projects/{project-id}/topics/{topic-name}
+    topic_name = Application.get_env(:jump_email_categorization, :gmail_pubsub_topic)
+
+    if topic_name do
+      case ApiClient.setup_push_notifications(account, topic_name) do
+        {:ok, response} ->
+          Logger.info("Gmail push notifications setup for #{account.email}: #{inspect(response)}")
+          {:ok, response}
+
+        {:error, reason} ->
+          Logger.error(
+            "Failed to setup push notifications for #{account.email}: #{inspect(reason)}"
+          )
+
+          {:error, reason}
+      end
+    else
+      Logger.warning("Gmail Pub/Sub topic not configured. Push notifications disabled.")
+      {:error, :topic_not_configured}
+    end
   end
 
   @doc """

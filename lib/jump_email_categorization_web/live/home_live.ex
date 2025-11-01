@@ -12,6 +12,14 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
     # Load Gmail accounts from database
     gmail_accounts = Gmail.list_gmail_accounts(user.id)
 
+    # Subscribe to PubSub for each account to track fetching status
+    Enum.each(gmail_accounts, fn account ->
+      Phoenix.PubSub.subscribe(
+        JumpEmailCategorization.PubSub,
+        "gmail_account:#{account.id}"
+      )
+    end)
+
     # Load categories from database
     categories = Categories.list_categories(user.id)
 
@@ -57,8 +65,35 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
       |> assign(:category_form, to_form(Categories.change_category(%Categories.Category{})))
       |> assign(:show_delete_category_modal, false)
       |> assign(:category_to_delete, "")
+      |> assign(:fetching_accounts, MapSet.new())
+      |> assign(:loading_message, nil)
 
     {:ok, socket}
+  end
+
+  @impl true
+  def handle_info({:fetching_emails, account_id}, socket) do
+    fetching_accounts = MapSet.put(socket.assigns.fetching_accounts, account_id)
+
+    socket =
+      socket
+      |> assign(:fetching_accounts, fetching_accounts)
+      |> maybe_update_loading_message()
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:fetch_complete, account_id}, socket) do
+    fetching_accounts = MapSet.delete(socket.assigns.fetching_accounts, account_id)
+
+    socket =
+      socket
+      |> assign(:fetching_accounts, fetching_accounts)
+      |> maybe_update_loading_message()
+      |> put_flash(:info, "Emails loaded successfully")
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -311,6 +346,32 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
     end
   end
 
+  defp maybe_update_loading_message(socket) do
+    cond do
+      MapSet.size(socket.assigns.fetching_accounts) > 0 and
+          socket.assigns.selected_account != "all" ->
+        # Check if the selected account is being fetched
+        selected_account_id =
+          case Integer.parse(socket.assigns.selected_account) do
+            {id, _} -> id
+            :error -> nil
+          end
+
+        if selected_account_id &&
+             MapSet.member?(socket.assigns.fetching_accounts, selected_account_id) do
+          assign(socket, :loading_message, "Loading emails...")
+        else
+          assign(socket, :loading_message, nil)
+        end
+
+      MapSet.size(socket.assigns.fetching_accounts) > 0 ->
+        assign(socket, :loading_message, "Loading emails...")
+
+      true ->
+        assign(socket, :loading_message, nil)
+    end
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -331,6 +392,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
           category_form={@category_form}
           show_delete_category_modal={@show_delete_category_modal}
           category_to_delete={@category_to_delete}
+          loading_message={@loading_message}
         />
 
         <%!-- Right Column: Email detail --%>
