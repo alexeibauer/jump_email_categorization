@@ -2,10 +2,16 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
   use JumpEmailCategorizationWeb, :live_view
 
   alias JumpEmailCategorizationWeb.EmailComponents
+  alias JumpEmailCategorization.Gmail
 
   @impl true
   def mount(_params, _session, socket) do
-    # Sample data - replace with actual data from your database later
+    user = socket.assigns.current_scope.user
+
+    # Load Gmail accounts from database
+    gmail_accounts = Gmail.list_gmail_accounts(user.id)
+
+    # Sample data - replace with actual data from Gmail API later
     emails = [
       %{
         id: "1",
@@ -27,20 +33,18 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
       }
     ]
 
-    accounts = [
-      %{id: "account1", name: "Account 1"},
-      %{id: "account2", name: "Account 2"}
-    ]
-
     socket =
       socket
       |> assign(:emails, emails)
-      |> assign(:accounts, accounts)
+      |> assign(:gmail_accounts, gmail_accounts)
       |> assign(:selected_account, "all")
       |> assign(:selected_category, "")
       |> assign(:selected_email_id, "1")
       |> assign(:selected_email, Enum.find(emails, &(&1.id == "1")))
       |> assign(:selected_for_unsubscribe, [])
+      |> assign(:show_delete_modal, false)
+      |> assign(:delete_account_email, "")
+      |> assign(:delete_account_id, nil)
 
     {:ok, socket}
   end
@@ -94,13 +98,92 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
   end
 
   @impl true
+  def handle_event("show-delete-account-modal", %{"id" => account_id, "email" => email}, socket) do
+    socket =
+      socket
+      |> assign(:show_delete_modal, true)
+      |> assign(:delete_account_email, email)
+      |> assign(:delete_account_id, account_id)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("cancel-delete-account", _params, socket) do
+    socket =
+      socket
+      |> assign(:show_delete_modal, false)
+      |> assign(:delete_account_email, "")
+      |> assign(:delete_account_id, nil)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("confirm-delete-account", %{"id" => account_id}, socket) do
+    user = socket.assigns.current_scope.user
+
+    # Parse the account_id (it comes as a string from phx-value)
+    account_id = String.to_integer(account_id)
+
+    case Gmail.get_gmail_account!(account_id) do
+      nil ->
+        socket =
+          socket
+          |> put_flash(:error, "Account not found")
+          |> assign(:show_delete_modal, false)
+
+        {:noreply, socket}
+
+      account ->
+        # Verify the account belongs to the current user
+        if account.user_id == user.id do
+          # Revoke OAuth access from Google
+          Gmail.revoke_oauth_access(account)
+
+          # Delete from database
+          case Gmail.delete_gmail_account(account) do
+            {:ok, _} ->
+              # Reload Gmail accounts
+              gmail_accounts = Gmail.list_gmail_accounts(user.id)
+
+              socket =
+                socket
+                |> assign(:gmail_accounts, gmail_accounts)
+                |> assign(:show_delete_modal, false)
+                |> assign(:delete_account_email, "")
+                |> assign(:delete_account_id, nil)
+                |> put_flash(:info, "Gmail account disconnected successfully")
+
+              {:noreply, socket}
+
+            {:error, _changeset} ->
+              socket =
+                socket
+                |> put_flash(:error, "Failed to delete account")
+                |> assign(:show_delete_modal, false)
+
+              {:noreply, socket}
+          end
+        else
+          socket =
+            socket
+            |> put_flash(:error, "Unauthorized")
+            |> assign(:show_delete_modal, false)
+
+          {:noreply, socket}
+        end
+    end
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <%!-- Three-column layout --%>
-      <div class="h-full grid grid-cols-[250px_1fr_2fr] overflow-hidden">
+      <div class="h-full grid grid-cols-[290px_1fr_2fr] overflow-hidden">
         <%!-- Left Sidebar: Gmail accounts --%>
-        <EmailComponents.sidebar accounts={@accounts} selected_account={@selected_account} />
+        <EmailComponents.sidebar accounts={@gmail_accounts} selected_account={@selected_account} />
 
         <%!-- Middle Column: Email list --%>
         <EmailComponents.email_list
@@ -118,6 +201,13 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
       <EmailComponents.unsubscribe_toast
         show={length(@selected_for_unsubscribe) > 0}
         selected_count={length(@selected_for_unsubscribe)}
+      />
+
+      <%!-- Delete Account Confirmation Modal --%>
+      <EmailComponents.delete_account_modal
+        show={@show_delete_modal}
+        account_email={@delete_account_email}
+        account_id={@delete_account_id}
       />
     </Layouts.app>
     """

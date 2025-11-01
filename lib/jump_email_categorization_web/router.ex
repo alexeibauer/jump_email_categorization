@@ -64,6 +64,15 @@ defmodule JumpEmailCategorizationWeb.Router do
     get "/users/settings/confirm-email/:token", UserSettingsController, :confirm_email
   end
 
+  ## OAuth routes (Google)
+  scope "/auth", JumpEmailCategorizationWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    get "/:provider", OAuthController, :request
+    get "/:provider/callback", OAuthController, :callback
+    post "/:provider/callback", OAuthController, :callback
+  end
+
   scope "/", JumpEmailCategorizationWeb do
     pipe_through [:browser]
 

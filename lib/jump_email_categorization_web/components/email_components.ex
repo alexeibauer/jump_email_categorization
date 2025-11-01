@@ -15,7 +15,15 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
     <div class="h-full flex flex-col border-r border-base-300 bg-base-100">
       <div class="flex-1 overflow-y-auto p-4">
         <h2 class="text-lg font-bold mb-4">Gmail accounts</h2>
-        <ul class="menu menu-compact">
+
+        <div :if={@accounts == []} class="text-center py-8">
+          <p class="text-base-content/70 mb-2">No accounts connected.</p>
+          <a href="/auth/google" class="link link-primary">
+            Connect your first account
+          </a>
+        </div>
+
+        <ul :if={@accounts != []} class="menu menu-compact">
           <li>
             <a
               href="#"
@@ -28,23 +36,48 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
             </a>
           </li>
           <li :for={account <- @accounts}>
-            <a
-              href="#"
-              class={[
-                "py-3",
-                @selected_account == account.id && "active"
-              ]}
-            >
-              {account.name}
-            </a>
+            <div class={[
+              "flex items-center justify-between gap-2 px-4 py-3 hover:bg-base-200 rounded-lg",
+              @selected_account == account.id && "bg-base-200"
+            ]}>
+              <a
+                href="#"
+                class="flex-1 truncate"
+              >
+                {account.email}
+              </a>
+              <button
+                type="button"
+                phx-click="show-delete-account-modal"
+                phx-value-id={account.id}
+                phx-value-email={account.email}
+                class="btn btn-ghost btn-xs btn-square text-error hover:bg-error/10"
+                title="Delete account"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                  class="w-4 h-4"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                  />
+                </svg>
+              </button>
+            </div>
           </li>
         </ul>
       </div>
       <div class="p-4 border-t border-base-300">
-        <button class="btn btn-primary w-full gap-2">
+        <a href="/auth/google" class="btn btn-primary w-full gap-2">
           <span class="text-lg">+</span>
           Add Gmail Account
-        </button>
+        </a>
       </div>
     </div>
     """
@@ -213,6 +246,43 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
         </div>
       </div>
     </div>
+    """
+  end
+
+  @doc """
+  Renders a confirmation modal for deleting a Gmail account.
+  """
+  attr :show, :boolean, default: false
+  attr :account_email, :string, default: ""
+  attr :account_id, :any, default: nil
+
+  def delete_account_modal(assigns) do
+    ~H"""
+    <dialog :if={@show} id="delete_account_modal" class="modal modal-open">
+      <div class="modal-box">
+        <h3 class="font-bold text-lg mb-4">Delete Gmail Account</h3>
+        <p class="py-4">
+          This will delete the account <span class="font-semibold">{@account_email}</span>.
+          You can re-connect anytime later.
+        </p>
+        <div class="modal-action">
+          <button
+            type="button"
+            class="btn btn-error"
+            phx-click="confirm-delete-account"
+            phx-value-id={@account_id}
+          >
+            Delete Account
+          </button>
+          <button type="button" class="btn" phx-click="cancel-delete-account">
+            Cancel
+          </button>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop">
+        <button phx-click="cancel-delete-account">close</button>
+      </form>
+    </dialog>
     """
   end
 end

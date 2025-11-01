@@ -47,10 +47,10 @@ defmodule JumpEmailCategorizationWeb.Layouts do
             <span class="text-sm">{@current_scope.user.email}</span>
           </li>
           <li :if={@current_scope && @current_scope.user}>
-            <a href={~p"/users/settings"} class="text-sm">Settings</a>
+            <.link href={~p"/users/settings"} class="text-sm">Settings</.link>
           </li>
           <li :if={@current_scope && @current_scope.user}>
-            <a href={~p"/users/log-out"} data-method="delete" class="text-sm">Logout</a>
+            <.link href={~p"/users/log-out"} method="delete" class="text-sm">Logout</.link>
           </li>
         </ul>
       </div>
