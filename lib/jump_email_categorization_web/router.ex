@@ -20,7 +20,8 @@ defmodule JumpEmailCategorizationWeb.Router do
   scope "/", JumpEmailCategorizationWeb do
     pipe_through [:browser, :require_authenticated_user]
 
-    live_session :authenticated, on_mount: [{JumpEmailCategorizationWeb.UserAuth, :ensure_authenticated}] do
+    live_session :authenticated,
+      on_mount: [{JumpEmailCategorizationWeb.UserAuth, :ensure_authenticated}] do
       live "/", HomeLive
     end
   end

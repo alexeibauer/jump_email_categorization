@@ -13,7 +13,10 @@ defmodule JumpEmailCategorizationWeb.UserAuthTest do
   setup %{conn: conn} do
     conn =
       conn
-      |> Map.replace!(:secret_key_base, JumpEmailCategorizationWeb.Endpoint.config(:secret_key_base))
+      |> Map.replace!(
+        :secret_key_base,
+        JumpEmailCategorizationWeb.Endpoint.config(:secret_key_base)
+      )
       |> init_test_session(%{})
 
     %{user: %{user_fixture() | authenticated_at: DateTime.utc_now(:second)}, conn: conn}
@@ -80,7 +83,10 @@ defmodule JumpEmailCategorizationWeb.UserAuthTest do
       conn =
         conn
         |> recycle()
-        |> Map.replace!(:secret_key_base, JumpEmailCategorizationWeb.Endpoint.config(:secret_key_base))
+        |> Map.replace!(
+          :secret_key_base,
+          JumpEmailCategorizationWeb.Endpoint.config(:secret_key_base)
+        )
         |> fetch_cookies()
         |> init_test_session(%{user_remember_me: true})
 

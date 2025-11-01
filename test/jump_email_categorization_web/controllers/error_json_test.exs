@@ -2,7 +2,9 @@ defmodule JumpEmailCategorizationWeb.ErrorJSONTest do
   use JumpEmailCategorizationWeb.ConnCase, async: true
 
   test "renders 404" do
-    assert JumpEmailCategorizationWeb.ErrorJSON.render("404.json", %{}) == %{errors: %{detail: "Not Found"}}
+    assert JumpEmailCategorizationWeb.ErrorJSON.render("404.json", %{}) == %{
+             errors: %{detail: "Not Found"}
+           }
   end
 
   test "renders 500" do

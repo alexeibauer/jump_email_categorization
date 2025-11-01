@@ -79,10 +79,12 @@ config :phoenix, :json_library, Jason
 # Configure Ueberauth
 config :ueberauth, Ueberauth,
   providers: [
-    google: {Ueberauth.Strategy.Google, [
-      default_scope: "email profile https://www.googleapis.com/auth/gmail.readonly",
-      prompt: "select_account"
-    ]}
+    google:
+      {Ueberauth.Strategy.Google,
+       [
+         default_scope: "email profile https://www.googleapis.com/auth/gmail.readonly",
+         prompt: "select_account"
+       ]}
   ]
 
 # Configure Google OAuth (values loaded from runtime.exs or dev.exs)

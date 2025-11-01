@@ -74,6 +74,9 @@ defmodule JumpEmailCategorizationWeb.ConnCase do
   defp maybe_set_token_authenticated_at(_token, nil), do: nil
 
   defp maybe_set_token_authenticated_at(token, authenticated_at) do
-    JumpEmailCategorization.AccountsFixtures.override_token_authenticated_at(token, authenticated_at)
+    JumpEmailCategorization.AccountsFixtures.override_token_authenticated_at(
+      token,
+      authenticated_at
+    )
   end
 end

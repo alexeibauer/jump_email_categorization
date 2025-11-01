@@ -3,6 +3,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
 
   alias JumpEmailCategorizationWeb.EmailComponents
   alias JumpEmailCategorization.Gmail
+  alias JumpEmailCategorization.Categories
 
   @impl true
   def mount(_params, _session, socket) do
@@ -11,25 +12,31 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
     # Load Gmail accounts from database
     gmail_accounts = Gmail.list_gmail_accounts(user.id)
 
+    # Load categories from database
+    categories = Categories.list_categories(user.id)
+
     # Sample data - replace with actual data from Gmail API later
     emails = [
       %{
         id: "1",
         subject: "Subject 1",
         summary: "Summary of email 1 with a brief description of the email contents",
-        content: "Email actual content text for Subject 1.\n\nThis is the full body of the email message that will be displayed when the user clicks on this email in the list."
+        content:
+          "Email actual content text for Subject 1.\n\nThis is the full body of the email message that will be displayed when the user clicks on this email in the list."
       },
       %{
         id: "2",
         subject: "Subject 2",
         summary: "Summary of email 1 with a brief description of the email contents",
-        content: "Email actual content text for Subject 2.\n\nThis is the full body of the email message that will be displayed when the user clicks on this email in the list."
+        content:
+          "Email actual content text for Subject 2.\n\nThis is the full body of the email message that will be displayed when the user clicks on this email in the list."
       },
       %{
         id: "3",
         subject: "Subject 3",
         summary: "Summary of email 1 with a brief description of the email contents",
-        content: "Email actual content text for Subject 3.\n\nThis is the full body of the email message that will be displayed when the user clicks on this email in the list."
+        content:
+          "Email actual content text for Subject 3.\n\nThis is the full body of the email message that will be displayed when the user clicks on this email in the list."
       }
     ]
 
@@ -37,6 +44,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
       socket
       |> assign(:emails, emails)
       |> assign(:gmail_accounts, gmail_accounts)
+      |> assign(:categories, categories)
       |> assign(:selected_account, "all")
       |> assign(:selected_category, "")
       |> assign(:selected_email_id, "1")
@@ -45,6 +53,10 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
       |> assign(:show_delete_modal, false)
       |> assign(:delete_account_email, "")
       |> assign(:delete_account_id, nil)
+      |> assign(:show_add_category_modal, false)
+      |> assign(:category_form, to_form(Categories.change_category(%Categories.Category{})))
+      |> assign(:show_delete_category_modal, false)
+      |> assign(:category_to_delete, "")
 
     {:ok, socket}
   end
@@ -177,6 +189,129 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
   end
 
   @impl true
+  def handle_event("select-category", %{"category" => category_name}, socket) do
+    {:noreply, assign(socket, :selected_category, category_name)}
+  end
+
+  @impl true
+  def handle_event("show-delete-category-modal", %{"category" => category_name}, socket) do
+    socket =
+      socket
+      |> assign(:show_delete_category_modal, true)
+      |> assign(:category_to_delete, category_name)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("cancel-delete-category", _params, socket) do
+    socket =
+      socket
+      |> assign(:show_delete_category_modal, false)
+      |> assign(:category_to_delete, "")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("confirm-delete-category", %{"category" => category_name}, socket) do
+    user = socket.assigns.current_scope.user
+
+    # Find the category by name and user_id
+    case Enum.find(socket.assigns.categories, &(&1.name == category_name)) do
+      nil ->
+        socket =
+          socket
+          |> put_flash(:error, "Category not found")
+          |> assign(:show_delete_category_modal, false)
+
+        {:noreply, socket}
+
+      category ->
+        case Categories.delete_category(category) do
+          {:ok, _} ->
+            # Reload categories
+            categories = Categories.list_categories(user.id)
+
+            socket =
+              socket
+              |> assign(:categories, categories)
+              |> assign(:selected_category, "")
+              |> assign(:show_delete_category_modal, false)
+              |> assign(:category_to_delete, "")
+              |> put_flash(:info, "Category deleted successfully")
+
+            {:noreply, socket}
+
+          {:error, _changeset} ->
+            socket =
+              socket
+              |> put_flash(:error, "Failed to delete category")
+              |> assign(:show_delete_category_modal, false)
+
+            {:noreply, socket}
+        end
+    end
+  end
+
+  @impl true
+  def handle_event("show-add-category-modal", _params, socket) do
+    changeset = Categories.change_category(%Categories.Category{})
+
+    socket =
+      socket
+      |> assign(:show_add_category_modal, true)
+      |> assign(:category_form, to_form(changeset))
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("cancel-add-category", _params, socket) do
+    socket =
+      socket
+      |> assign(:show_add_category_modal, false)
+      |> assign(:category_form, to_form(Categories.change_category(%Categories.Category{})))
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("validate-category", %{"category" => category_params}, socket) do
+    user = socket.assigns.current_scope.user
+
+    changeset =
+      %Categories.Category{}
+      |> Categories.change_category(Map.put(category_params, "user_id", user.id))
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign(socket, :category_form, to_form(changeset))}
+  end
+
+  @impl true
+  def handle_event("create-category", %{"category" => category_params}, socket) do
+    user = socket.assigns.current_scope.user
+
+    case Categories.create_category(Map.put(category_params, "user_id", user.id)) do
+      {:ok, _category} ->
+        # Reload categories
+        categories = Categories.list_categories(user.id)
+
+        socket =
+          socket
+          |> assign(:categories, categories)
+          |> assign(:show_add_category_modal, false)
+          |> assign(:category_form, to_form(Categories.change_category(%Categories.Category{})))
+          |> put_flash(:info, "Category created successfully")
+
+        {:noreply, socket}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :category_form, to_form(changeset))}
+    end
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
@@ -188,9 +323,14 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
         <%!-- Middle Column: Email list --%>
         <EmailComponents.email_list
           emails={@emails}
+          categories={@categories}
           selected_category={@selected_category}
           selected_email_id={@selected_email_id}
           selected_for_unsubscribe={@selected_for_unsubscribe}
+          show_add_category_modal={@show_add_category_modal}
+          category_form={@category_form}
+          show_delete_category_modal={@show_delete_category_modal}
+          category_to_delete={@category_to_delete}
         />
 
         <%!-- Right Column: Email detail --%>

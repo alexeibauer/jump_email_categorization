@@ -75,8 +75,7 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
       </div>
       <div class="p-4 border-t border-base-300">
         <a href="/auth/google" class="btn btn-primary w-full gap-2">
-          <span class="text-lg">+</span>
-          Add Gmail Account
+          <span class="text-lg">+</span> Add Gmail Account
         </a>
       </div>
     </div>
@@ -87,29 +86,59 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
   Renders the central email list with category selector.
   """
   attr :emails, :list, default: []
+  attr :categories, :list, default: []
   attr :selected_category, :string, default: ""
   attr :selected_email_id, :string, default: ""
   attr :selected_for_unsubscribe, :list, default: []
+  attr :show_add_category_modal, :boolean, default: false
+  attr :category_form, :map, default: nil
+  attr :show_delete_category_modal, :boolean, default: false
+  attr :category_to_delete, :string, default: ""
 
   def email_list(assigns) do
     ~H"""
     <div class="h-full flex flex-col border-r border-base-300 bg-base-100">
       <div class="p-4 border-b border-base-300">
         <div class="flex gap-2">
-          <select class="select select-bordered flex-1">
-            <option disabled selected>Choose a category...</option>
-            <option>Work</option>
-            <option>Personal</option>
-            <option>Promotions</option>
-            <option>Social</option>
-          </select>
-          <button class="btn btn-primary gap-2" onclick="add_category_modal.showModal()">
-            <span class="text-lg">+</span>
-            Add
+          <form phx-change="select-category" class="flex-1">
+            <select
+              class="select select-bordered w-full"
+              name="category"
+            >
+              <option value="" disabled selected={@selected_category == ""}>
+                Choose a category...
+              </option>
+              <option
+                :for={category <- @categories}
+                value={category.name}
+                selected={@selected_category == category.name}
+              >
+                {category.name}
+              </option>
+            </select>
+          </form>
+          <button
+            type="button"
+            class="btn btn-primary gap-2"
+            phx-click="show-add-category-modal"
+          >
+            <span class="text-lg">+</span> Add
           </button>
         </div>
         <p class="text-sm mt-3 text-base-content/70">
-          Showing category <%= if @selected_category != "", do: "<#{@selected_category}>", else: "<Category selected>" %>
+          <%= if @selected_category != "" do %>
+            Showing category: <span class="font-semibold">{@selected_category}</span>
+            <a
+              href="#"
+              class="ml-2 text-error hover:underline"
+              phx-click="show-delete-category-modal"
+              phx-value-category={@selected_category}
+            >
+              (Delete)
+            </a>
+          <% else %>
+            Select a category to view emails
+          <% end %>
         </p>
       </div>
       <div class="flex-1 overflow-y-auto">
@@ -144,48 +173,118 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
       </div>
 
       <%!-- Add Category Modal --%>
-      <dialog id="add_category_modal" class="modal">
+      <dialog :if={@show_add_category_modal} id="add_category_modal" class="modal modal-open">
         <div class="modal-box">
-          <form method="dialog">
-            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-          </form>
+          <button
+            type="button"
+            class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+            phx-click="cancel-add-category"
+          >
+            ✕
+          </button>
           <h3 class="font-bold text-lg mb-4">Add New Category</h3>
-          <div class="space-y-4">
+          <.form
+            for={@category_form}
+            id="category-form"
+            phx-submit="create-category"
+            phx-change="validate-category"
+            class="space-y-4"
+          >
             <div>
               <label class="label">
                 <span class="label-text">Category Name</span>
               </label>
               <input
                 type="text"
+                name="category[name]"
+                value={Phoenix.HTML.Form.input_value(@category_form, :name)}
                 placeholder="Enter category name..."
                 class="input input-bordered w-full"
-                id="category-name-input"
+                phx-debounce="300"
               />
+              <label :if={@category_form.errors[:name]} class="label">
+                <span class="label-text-alt text-error">
+                  {translate_error(Keyword.get(@category_form.errors, :name))}
+                </span>
+              </label>
             </div>
             <div>
               <label class="label">
                 <span class="label-text">Description</span>
               </label>
               <textarea
+                name="category[description]"
                 placeholder="Enter category description..."
                 class="textarea textarea-bordered w-full h-24"
-                id="category-description-input"
-              ></textarea>
+                phx-debounce="300"
+              >{Phoenix.HTML.Form.input_value(@category_form, :description)}</textarea>
+              <label :if={@category_form.errors[:description]} class="label">
+                <span class="label-text-alt text-error">
+                  {translate_error(Keyword.get(@category_form.errors, :description))}
+                </span>
+              </label>
             </div>
-          </div>
+            <div class="modal-action">
+              <button
+                type="submit"
+                class="btn btn-primary"
+              >
+                Create Category
+              </button>
+              <button
+                type="button"
+                class="btn"
+                phx-click="cancel-add-category"
+              >
+                Cancel
+              </button>
+            </div>
+          </.form>
+        </div>
+        <div class="modal-backdrop" phx-click="cancel-add-category"></div>
+      </dialog>
+
+      <%!-- Delete Category Modal --%>
+      <dialog :if={@show_delete_category_modal} id="delete_category_modal" class="modal modal-open">
+        <div class="modal-box">
+          <h3 class="font-bold text-lg mb-4">Delete Category</h3>
+          <p class="py-4">
+            Are you sure that you want to delete the category <span class="font-semibold">'{@category_to_delete}'</span>?
+            Any email under this category will be re-categorized, or listed as "Uncategorized" if no match is found.
+          </p>
           <div class="modal-action">
-            <form method="dialog">
-              <button class="btn btn-primary">Create Category</button>
-            </form>
+          <a
+          style="margin-top: 5px;margin-right: 10px;"
+          href="#"
+          class="link link-hover"
+          phx-click="cancel-delete-category"
+          >
+          Cancel
+          </a>
+          <button
+            type="button"
+            class="btn btn-error"
+            phx-click="confirm-delete-category"
+            phx-value-category={@category_to_delete}
+          >
+            Yes
+          </button>
           </div>
         </div>
-        <form method="dialog" class="modal-backdrop">
-          <button>close</button>
-        </form>
+        <div class="modal-backdrop" phx-click="cancel-delete-category"></div>
       </dialog>
     </div>
     """
   end
+
+  # Helper function to translate changeset errors
+  defp translate_error({msg, opts}) do
+    Enum.reduce(opts, msg, fn {key, value}, acc ->
+      String.replace(acc, "%{#{key}}", to_string(value))
+    end)
+  end
+
+  defp translate_error(msg) when is_binary(msg), do: msg
 
   @doc """
   Renders the email detail view on the right.

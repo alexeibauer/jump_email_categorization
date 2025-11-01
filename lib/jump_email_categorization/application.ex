@@ -10,7 +10,8 @@ defmodule JumpEmailCategorization.Application do
     children = [
       JumpEmailCategorizationWeb.Telemetry,
       JumpEmailCategorization.Repo,
-      {DNSCluster, query: Application.get_env(:jump_email_categorization, :dns_cluster_query) || :ignore},
+      {DNSCluster,
+       query: Application.get_env(:jump_email_categorization, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: JumpEmailCategorization.PubSub},
       # Start a worker by calling: JumpEmailCategorization.Worker.start_link(arg)
       # {JumpEmailCategorization.Worker, arg},

@@ -4,6 +4,7 @@ defmodule JumpEmailCategorizationWeb.UserSessionHTML do
   embed_templates "user_session_html/*"
 
   defp local_mail_adapter? do
-    Application.get_env(:jump_email_categorization, JumpEmailCategorization.Mailer)[:adapter] == Swoosh.Adapters.Local
+    Application.get_env(:jump_email_categorization, JumpEmailCategorization.Mailer)[:adapter] ==
+      Swoosh.Adapters.Local
   end
 end
