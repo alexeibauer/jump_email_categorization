@@ -6,5 +6,7 @@ defmodule JumpEmailCategorizationWeb.PageHTML do
   """
   use JumpEmailCategorizationWeb, :html
 
+  alias JumpEmailCategorizationWeb.EmailComponents
+
   embed_templates "page_html/*"
 end

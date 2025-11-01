@@ -35,19 +35,29 @@ defmodule JumpEmailCategorizationWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
+    <header class="navbar bg-base-100 border-b border-base-300 px-6">
       <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          Jump Email Categorization
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
+        <a href="/" class="text-lg font-semibold">
+          App title
         </a>
+      </div>
+      <div class="flex-none">
+        <ul class="menu menu-horizontal px-1 gap-4">
+          <li :if={@current_scope && @current_scope.user}>
+            <span class="text-sm">{@current_scope.user.email}</span>
+          </li>
+          <li :if={@current_scope && @current_scope.user}>
+            <a href={~p"/users/settings"} class="text-sm">Settings</a>
+          </li>
+          <li :if={@current_scope && @current_scope.user}>
+            <a href={~p"/users/log-out"} data-method="delete" class="text-sm">Logout</a>
+          </li>
+        </ul>
       </div>
     </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
-        {render_slot(@inner_block)}
-      </div>
+    <main class="flex-1 overflow-hidden">
+      {render_slot(@inner_block)}
     </main>
 
     <.flash_group flash={@flash} />
