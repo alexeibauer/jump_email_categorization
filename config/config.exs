@@ -92,9 +92,19 @@ config :ueberauth, Ueberauth.Strategy.Google.OAuth,
   client_id: System.get_env("GOOGLE_CLIENT_ID"),
   client_secret: System.get_env("GOOGLE_CLIENT_SECRET")
 
+config :jump_email_categorization,
+  gmail_pubsub_topic: "projects/jumpelixiremailcategorization/topics/gmail-notifications",
+  openai_api_key: System.get_env("OPENAI_API_KEY")
+
+# Configure Oban for background job processing
+config :jump_email_categorization, Oban,
+  repo: JumpEmailCategorization.Repo,
+  queues: [emails: 10],
+  plugins: [
+    Oban.Plugins.Pruner,
+    {Oban.Plugins.Cron, crontab: []}
+  ]
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
-
-config :jump_email_categorization,
-  gmail_pubsub_topic: "projects/jumpelixiremailcategorization/topics/gmail-notifications"

@@ -68,7 +68,8 @@ defmodule JumpEmailCategorization.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:ueberauth, "~> 0.10"},
-      {:ueberauth_google, "~> 0.12"}
+      {:ueberauth_google, "~> 0.12"},
+      {:oban, "~> 2.17"}
     ]
   end
 

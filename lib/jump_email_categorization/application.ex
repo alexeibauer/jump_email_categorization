@@ -14,6 +14,7 @@ defmodule JumpEmailCategorization.Application do
        query: Application.get_env(:jump_email_categorization, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: JumpEmailCategorization.PubSub},
       {Task.Supervisor, name: JumpEmailCategorization.TaskSupervisor},
+      {Oban, Application.get_env(:jump_email_categorization, Oban)},
       # Start a worker by calling: JumpEmailCategorization.Worker.start_link(arg)
       # {JumpEmailCategorization.Worker, arg},
       # Start to serve requests, typically the last entry

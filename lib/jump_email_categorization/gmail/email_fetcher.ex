@@ -153,18 +153,23 @@ defmodule JumpEmailCategorization.Gmail.EmailFetcher do
 
   @doc """
   Processes a single new email that just arrived.
-  Stores it, categorizes it (TODO), summarizes it (TODO), and archives it in Gmail.
+  Stores it, enqueues Oban job for AI processing, and archives it in Gmail.
   """
   def process_single_new_email(%GmailAccount{} = account, message_id) do
     Logger.info("Processing new email #{message_id} for account: #{account.email}")
 
     case fetch_and_store_message(account, message_id) do
       {:ok, email} ->
-        # TODO: Process categorization
-        # spawn(fn -> Emails.categorize_email(email) end)
+        # Enqueue Oban job for AI processing (summarization and categorization)
+        case enqueue_email_processing(email) do
+          {:ok, _job} ->
+            Logger.info("Enqueued AI processing job for email #{email.id}")
 
-        # TODO: Process summarization
-        # spawn(fn -> Emails.summarize_email(email) end)
+          {:error, reason} ->
+            Logger.error(
+              "Failed to enqueue AI processing for email #{email.id}: #{inspect(reason)}"
+            )
+        end
 
         # Archive the email in Gmail
         case ApiClient.archive_message(account, message_id) do
@@ -183,6 +188,12 @@ defmodule JumpEmailCategorization.Gmail.EmailFetcher do
         Logger.error("Failed to store email #{message_id}: #{inspect(reason)}")
         {:error, reason}
     end
+  end
+
+  defp enqueue_email_processing(email) do
+    %{email_id: email.id}
+    |> JumpEmailCategorization.Workers.EmailProcessorWorker.new()
+    |> Oban.insert()
   end
 
   # Private functions
