@@ -33,7 +33,7 @@ defmodule JumpEmailCategorization.Gmail do
 
   @doc """
   Creates or updates a gmail_account from OAuth data.
-  Automatically triggers email fetching for new or updated accounts.
+  Sets up Gmail push notifications to receive new emails via webhook.
   """
   def create_or_update_gmail_account(user_id, oauth_data) do
     attrs = %{
@@ -61,15 +61,12 @@ defmodule JumpEmailCategorization.Gmail do
           |> Repo.update()
       end
 
-    # Start async email fetching for the account
+    # Setup Gmail push notifications for real-time email processing
     case result do
       {:ok, account} ->
-        Logger.info("Starting email fetch for new/updated account: #{account.email}")
+        Logger.info("Setting up Gmail account: #{account.email}")
 
-        # Start async fetch
-        EmailFetcher.start_fetch(account)
-
-        # Setup Gmail push notifications
+        # Setup Gmail push notifications to receive new emails
         setup_gmail_push_notifications(account)
 
         {:ok, account}
@@ -80,13 +77,30 @@ defmodule JumpEmailCategorization.Gmail do
   end
 
   @doc """
-  Deletes a gmail_account.
+  Deletes a gmail_account, stops push notifications, and revokes OAuth access.
+
+  IMPORTANT: Operations are performed in this specific order:
+  1. Stop push notifications (requires valid OAuth token)
+  2. Revoke OAuth access (invalidates the token)
+  3. Delete from local database
   """
   def delete_gmail_account(%GmailAccount{} = gmail_account) do
-    # TODO: Unsubscribe from Gmail Pub/Sub notifications and delete the topic
-    # Call ApiClient.stop_push_notifications(gmail_account)
-    # Delete the Pub/Sub topic from Google Cloud
+    # Step 1: Stop push notifications (while token is still valid)
+    case ApiClient.stop_push_notifications(gmail_account) do
+      {:ok, :stopped} ->
+        Logger.info("Successfully stopped push notifications for #{gmail_account.email}")
 
+      {:error, reason} ->
+        Logger.warning(
+          "Failed to stop push notifications for #{gmail_account.email}: #{inspect(reason)}. " <>
+            "Proceeding with account deletion anyway."
+        )
+    end
+
+    # Step 2: Revoke OAuth access from Google (invalidates the token)
+    revoke_oauth_access(gmail_account)
+
+    # Step 3: Delete the account from the database
     Repo.delete(gmail_account)
   end
 
@@ -114,9 +128,13 @@ defmodule JumpEmailCategorization.Gmail do
 
   @doc """
   Sets up Gmail push notifications via Pub/Sub.
+
+  Note: This requires proper Google Cloud Pub/Sub configuration:
+  1. Create a Pub/Sub topic in your Google Cloud project
+  2. Grant gmail-api-push@system.gserviceaccount.com the "Pub/Sub Publisher" role on the topic
+  3. Configure the topic name in your application config
   """
   def setup_gmail_push_notifications(%GmailAccount{} = account) do
-    # TODO: Configure your Google Cloud Pub/Sub topic
     # Format: projects/{project-id}/topics/{topic-name}
     topic_name = Application.get_env(:jump_email_categorization, :gmail_pubsub_topic)
 
@@ -124,7 +142,32 @@ defmodule JumpEmailCategorization.Gmail do
       case ApiClient.setup_push_notifications(account, topic_name) do
         {:ok, response} ->
           Logger.info("Gmail push notifications setup for #{account.email}: #{inspect(response)}")
+
+          # Store the initial history_id so we can track changes from this point forward
+          if history_id = response["historyId"] do
+            account
+            |> GmailAccount.changeset(%{last_history_id: to_string(history_id)})
+            |> Repo.update()
+          end
+
           {:ok, response}
+
+        {:error, {:api_error, 403, _body}} ->
+          Logger.warning("""
+          Failed to setup push notifications for #{account.email}: Permission denied.
+
+          Gmail needs permission to publish to your Pub/Sub topic.
+          To fix this:
+          1. Go to Google Cloud Console > Pub/Sub > Topics
+          2. Select your topic: #{topic_name}
+          3. Click "Permissions" tab
+          4. Add gmail-api-push@system.gserviceaccount.com as a member
+          5. Grant it the "Pub/Sub Publisher" role
+
+          The account will still work, but won't receive real-time notifications.
+          """)
+
+          {:error, :permission_denied}
 
         {:error, reason} ->
           Logger.error(

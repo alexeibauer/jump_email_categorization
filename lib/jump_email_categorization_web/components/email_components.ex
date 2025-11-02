@@ -27,9 +27,11 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
           <li>
             <a
               href="#"
+              phx-click="select-account"
+              phx-value-id="all"
               class={[
                 "py-3",
-                @selected_account == "all" && "active"
+                @selected_account == "all" && "font-bold underline"
               ]}
             >
               All accounts
@@ -38,11 +40,16 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
           <li :for={account <- @accounts}>
             <div class={[
               "flex items-center justify-between gap-2 px-4 py-3 hover:bg-base-200 rounded-lg",
-              @selected_account == account.id && "bg-base-200"
+              @selected_account == to_string(account.id) && "bg-base-200"
             ]}>
               <a
                 href="#"
-                class="flex-1 truncate"
+                phx-click="select-account"
+                phx-value-id={account.id}
+                class={[
+                  "flex-1 truncate",
+                  @selected_account == to_string(account.id) && "font-bold underline"
+                ]}
               >
                 {account.email}
               </a>
@@ -95,10 +102,11 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
   attr :show_delete_category_modal, :boolean, default: false
   attr :category_to_delete, :string, default: ""
   attr :loading_message, :string, default: nil
+  attr :pagination, :map, default: nil
 
   def email_list(assigns) do
     ~H"""
-    <div class="h-full flex flex-col border-r border-base-300 bg-base-100">
+    <div class="h-full flex flex-col border-r border-base-300 bg-base-100 overflow-hidden">
       <div class="p-4 border-b border-base-300">
         <div class="flex gap-2">
           <form phx-change="select-category" class="flex-1">
@@ -143,44 +151,85 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
         </p>
       </div>
       <div class="flex-1 overflow-y-auto">
-        <%= if @loading_message do %>
-          <div class="flex items-center justify-center h-full">
-            <div class="text-center">
-              <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
-              <p class="text-lg text-base-content/70">{@loading_message}</p>
+        <%= cond do %>
+          <% @loading_message -> %>
+            <div class="flex items-center justify-center h-full">
+              <div class="text-center">
+                <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
+                <p class="text-lg text-base-content/70">{@loading_message}</p>
+              </div>
             </div>
-          </div>
-        <% else %>
-          <div :for={email <- @emails} class="border-b border-base-300">
-            <div class={[
-              "p-4 hover:bg-base-200 transition-colors",
-              @selected_email_id == email.id && "bg-base-200"
-            ]}>
-              <div class="flex gap-3">
-                <label class="cursor-pointer">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-sm mt-1"
-                    checked={email.id in @selected_for_unsubscribe}
-                    phx-click="toggle-email-selection"
+          <% @emails == [] -> %>
+            <div class="flex items-center justify-center h-full">
+              <p class="text-lg text-base-content/50">No emails received yet</p>
+            </div>
+          <% true -> %>
+            <div :for={email <- @emails} class="border-b border-base-300">
+              <div class={[
+                "p-4 hover:bg-base-200 transition-colors",
+                @selected_email_id == email.id && "bg-base-200"
+              ]}>
+                <div class="flex gap-3">
+                  <label class="cursor-pointer">
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-sm mt-1"
+                      checked={email.id in @selected_for_unsubscribe}
+                      phx-click="toggle-email-selection"
+                      phx-value-id={email.id}
+                    />
+                  </label>
+                  <div
+                    class="flex-1 cursor-pointer overflow-hidden"
+                    phx-click="select-email"
                     phx-value-id={email.id}
-                  />
-                </label>
-                <div
-                  class="flex-1 cursor-pointer"
-                  phx-click="select-email"
-                  phx-value-id={email.id}
-                >
-                  <h3 class="font-bold text-base mb-2">{email.subject}</h3>
-                  <p class="text-sm text-base-content/70 line-clamp-2">
-                    {email.summary}
-                  </p>
+                  >
+                    <h3 class="font-bold text-base mb-2 truncate">
+                      {email.subject || "(No subject)"}
+                    </h3>
+                    <p class="text-sm text-base-content/70 line-clamp-2 break-words">
+                      {email.summary || email.snippet || "No preview available"}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
         <% end %>
       </div>
+
+      <%!-- Pagination Controls --%>
+      <%= if @pagination && @pagination.total_pages > 1 && !@loading_message do %>
+        <div class="p-4 border-t border-base-300 bg-base-100">
+          <div class="flex items-center justify-between">
+            <div class="text-sm text-base-content/70">
+              Page {@pagination.page} of {@pagination.total_pages}
+              <span class="ml-2">
+                ({@pagination.total_count} total emails)
+              </span>
+            </div>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="btn btn-sm"
+                phx-click="paginate"
+                phx-value-page={@pagination.page - 1}
+                disabled={!@pagination.has_prev}
+              >
+                ← Previous
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm"
+                phx-click="paginate"
+                phx-value-page={@pagination.page + 1}
+                disabled={!@pagination.has_next}
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        </div>
+      <% end %>
 
       <%!-- Add Category Modal --%>
       <dialog :if={@show_add_category_modal} id="add_category_modal" class="modal modal-open">
@@ -303,13 +352,33 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
 
   def email_detail(assigns) do
     ~H"""
-    <div class="h-full flex flex-col bg-base-100">
+    <div class="h-full flex flex-col bg-base-100 overflow-hidden">
       <div :if={@email} class="flex-1 overflow-y-auto">
         <div class="p-6">
-          <h1 class="text-2xl font-bold mb-6">{@email.subject}</h1>
+          <h1 class="text-2xl font-bold mb-4 break-words">{@email.subject || "(No subject)"}</h1>
+
+          <%!-- Email metadata --%>
+          <div class="mb-6 text-sm text-base-content/70 space-y-1">
+            <div :if={@email.from_name || @email.from_email} class="break-words">
+              <span class="font-semibold">From:</span>
+              {if @email.from_name, do: @email.from_name <> " <", else: ""}
+              {@email.from_email || "Unknown"}
+              {if @email.from_name, do: ">", else: ""}
+            </div>
+            <div :if={@email.received_at}>
+              <span class="font-semibold">Date:</span>
+              {Calendar.strftime(@email.received_at, "%B %d, %Y at %I:%M %p")}
+            </div>
+            <div :if={@email.summary} class="break-words">
+              <span class="font-semibold">Summary:</span>
+              {@email.summary}
+            </div>
+          </div>
+
+          <%!-- Email body --%>
           <div class="border border-base-300 rounded-lg p-6 min-h-[400px]">
-            <p class="text-base leading-relaxed whitespace-pre-wrap">
-              {Map.get(@email, :content, "No content available")}
+            <p class="text-base leading-relaxed whitespace-pre-wrap break-words overflow-wrap-anywhere">
+              {@email.body || @email.snippet || "No content available"}
             </p>
           </div>
         </div>

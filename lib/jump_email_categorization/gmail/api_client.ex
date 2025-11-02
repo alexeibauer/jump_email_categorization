@@ -29,7 +29,7 @@ defmodule JumpEmailCategorization.Gmail.ApiClient do
 
     url = "#{@gmail_api_base}/users/me/messages"
 
-    case make_request(:get, url, account, query: query_params) do
+    case make_request(:get, url, account, params: query_params) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, body}
 
@@ -47,9 +47,37 @@ defmodule JumpEmailCategorization.Gmail.ApiClient do
   def get_message(%GmailAccount{} = account, message_id) do
     url = "#{@gmail_api_base}/users/me/messages/#{message_id}"
 
-    case make_request(:get, url, account, query: [format: "full"]) do
+    case make_request(:get, url, account, params: [format: "full"]) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, body}
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, {:api_error, status, body}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Fetches history of changes since a given history_id.
+  Returns messages that were added/modified.
+  """
+  def get_history(%GmailAccount{} = account, start_history_id) do
+    url = "#{@gmail_api_base}/users/me/history"
+
+    query_params = [
+      startHistoryId: start_history_id,
+      historyTypes: "messageAdded"
+    ]
+
+    case make_request(:get, url, account, params: query_params) do
+      {:ok, %{status: 200, body: body}} ->
+        {:ok, body}
+
+      {:ok, %{status: 404, body: _body}} ->
+        # History ID is too old, return empty history
+        {:ok, %{"history" => []}}
 
       {:ok, %{status: status, body: body}} ->
         {:error, {:api_error, status, body}}
@@ -187,18 +215,18 @@ defmodule JumpEmailCategorization.Gmail.ApiClient do
       {"Accept", "application/json"}
     ]
 
-    Req.request(
+    base_opts = [
       method: method,
       url: url,
       headers: headers,
       decode_json: [keys: :strings]
-    )
-    |> maybe_merge_opts(opts)
-    |> Req.request()
-  end
+    ]
 
-  defp maybe_merge_opts(req, []), do: req
-  defp maybe_merge_opts(req, opts), do: Req.merge(req, opts)
+    # Merge additional options with base options
+    final_opts = Keyword.merge(base_opts, opts)
+
+    Req.request(final_opts)
+  end
 
   defp maybe_add_page_token(params, nil), do: params
   defp maybe_add_page_token(params, token), do: Keyword.put(params, :pageToken, token)

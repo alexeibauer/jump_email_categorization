@@ -12,13 +12,13 @@ The application automatically fetches emails from connected Gmail accounts, stor
 
 When a user connects a Gmail account (via OAuth), the application automatically:
 - Triggers an asynchronous task to fetch emails
-- Fetches up to 100 emails (configurable) from the INBOX
+- Fetches up to 10 emails (configurable) from the INBOX
 - Stores emails in the `emails` table with full metadata
 - Archives fetched emails by removing the INBOX label
 - Records the archive timestamp
 
 **Configuration:**
-The number of emails to fetch is controlled by `@max_emails_to_fetch` in `lib/jump_email_categorization/gmail/email_fetcher.ex` (currently set to 100).
+The number of emails to fetch is controlled by `@max_emails_to_fetch` in `lib/jump_email_categorization/gmail/email_fetcher.ex` (currently set to 10).
 
 ### 2. Email Storage
 
@@ -44,7 +44,7 @@ create_or_update_gmail_account() called
   ↓
 EmailFetcher.start_fetch() triggered (async)
   ↓
-Fetch 100 emails from INBOX (in chunks of 10)
+Fetch 10 emails from INBOX (in chunks of 10)
   ↓
 For each email:
   - Parse Gmail API response
@@ -70,12 +70,6 @@ When emails are being fetched:
 - PubSub broadcasts keep the UI updated on fetch status
 - A success message appears when fetching completes
 
-### 6. Placeholder Functions for Future Features
-
-Two functions are ready for implementation:
-- `Emails.categorize_email/1` - For AI-based email categorization
-- `Emails.summarize_email/1` - For AI-based email summarization
-
 ## Setup Instructions
 
 ### 1. Google Cloud Configuration
@@ -97,7 +91,21 @@ config :jump_email_categorization,
   gmail_pubsub_topic: "projects/{your-project-id}/topics/gmail-notifications"
 ```
 
-### 3. Set up Pub/Sub Push Subscription
+### 3. Grant Gmail Permission to Publish to Your Topic
+
+**IMPORTANT:** Gmail needs permission to publish messages to your Pub/Sub topic.
+
+1. In Google Cloud Console, go to **Pub/Sub > Topics**
+2. Click on your topic (e.g., `gmail-notifications`)
+3. Click the **"Permissions"** tab
+4. Click **"Add Principal"**
+5. Add this service account: `gmail-api-push@system.gserviceaccount.com`
+6. Assign the role: **"Pub/Sub Publisher"**
+7. Click **"Save"**
+
+**Without this step, you'll get a 403 Permission Denied error when connecting Gmail accounts.**
+
+### 4. Set up Pub/Sub Push Subscription
 
 Create a push subscription that points to your webhook endpoint:
 
@@ -107,7 +115,7 @@ gcloud pubsub subscriptions create gmail-push-sub \
   --push-endpoint=https://your-domain.com/api/webhooks/gmail
 ```
 
-### 4. Grant Gmail API Permission
+### 5. Grant Gmail API Permission to Your OAuth App
 
 Ensure your OAuth app has the following scope:
 - `https://www.googleapis.com/auth/gmail.modify`
@@ -207,11 +215,6 @@ When a Gmail account is deleted:
 - All associated emails are automatically deleted (cascade)
 - A TODO reminder exists to stop Pub/Sub notifications
 
-**TODO:** Implement in `Gmail.delete_gmail_account/1`:
-```elixir
-ApiClient.stop_push_notifications(gmail_account)
-# Delete the Pub/Sub topic from Google Cloud
-```
 
 ## Testing
 
@@ -231,13 +234,3 @@ Watch the logs for:
 - Archive operations
 - Pub/Sub webhook calls
 - Any error messages
-
-## Future Enhancements
-
-1. **Categorization** - Implement `Emails.categorize_email/1` with AI
-2. **Summarization** - Implement `Emails.summarize_email/1` with AI
-3. **History API** - Use Gmail's history endpoint for more efficient Pub/Sub processing
-4. **Attachments** - Store and manage email attachments
-5. **Search** - Implement full-text search on email content
-6. **Filters** - Allow users to create custom email filters
-

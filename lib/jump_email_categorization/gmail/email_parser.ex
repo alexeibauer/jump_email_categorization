@@ -9,6 +9,16 @@ defmodule JumpEmailCategorization.Gmail.EmailParser do
   def parse_message(message_data, gmail_account_id, user_id) do
     headers = get_headers(message_data)
 
+    # Use internalDate as the primary source for received_at since it's more reliable
+    # internalDate is a timestamp in milliseconds
+    internal_date = parse_internal_date(message_data["internalDate"])
+
+    received_at =
+      case internal_date do
+        nil -> parse_date(get_header(headers, "Date"))
+        timestamp -> DateTime.from_unix!(timestamp, :millisecond)
+      end
+
     %{
       gmail_account_id: gmail_account_id,
       user_id: user_id,
@@ -22,8 +32,8 @@ defmodule JumpEmailCategorization.Gmail.EmailParser do
       labels: message_data["labelIds"] || [],
       snippet: message_data["snippet"],
       body: extract_body(message_data),
-      received_at: parse_date(get_header(headers, "Date")),
-      internal_date: parse_internal_date(message_data["internalDate"])
+      received_at: received_at,
+      internal_date: internal_date
     }
   end
 
@@ -160,9 +170,10 @@ defmodule JumpEmailCategorization.Gmail.EmailParser do
   defp parse_internal_date(nil), do: nil
 
   defp parse_internal_date(timestamp) when is_binary(timestamp) do
-    String.to_integer(timestamp)
-  rescue
-    _ -> nil
+    case Integer.parse(timestamp) do
+      {int, _} -> int
+      :error -> nil
+    end
   end
 
   defp parse_internal_date(timestamp) when is_integer(timestamp), do: timestamp

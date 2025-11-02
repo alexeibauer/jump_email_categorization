@@ -16,7 +16,7 @@ defmodule JumpEmailCategorizationWeb.GmailWebhookController do
 
     case decode_pubsub_message(params) do
       {:ok, %{"emailAddress" => email, "historyId" => history_id}} ->
-        Logger.info("Processing webhook for #{email}, history_id: #{history_id}")
+        Logger.info("Processing webhook for #{email}, historyId: #{history_id}")
 
         # Find the Gmail account by email
         case find_account_by_email(email) do
@@ -25,9 +25,7 @@ defmodule JumpEmailCategorizationWeb.GmailWebhookController do
             send_resp(conn, 200, "OK")
 
           account ->
-            # Trigger email fetch for this account
-            # In a production system, you'd use the history_id to fetch only new messages
-            # For now, we'll just trigger a fetch which will handle duplicates via unique constraint
+            # Process new emails asynchronously using history to find which messages are new
             Task.start(fn ->
               process_new_emails(account, history_id)
             end)
@@ -64,25 +62,12 @@ defmodule JumpEmailCategorizationWeb.GmailWebhookController do
     )
   end
 
-  defp process_new_emails(account, _history_id) do
-    # In a production system, you would use the Gmail API's history endpoint
-    # to fetch only the messages that changed since the last history_id
-    # For now, we'll just fetch recent messages
+  defp process_new_emails(account, history_id) do
+    # Use history API to identify which specific emails just arrived in INBOX
+    # This filters out drafts, sent emails, and other non-inbox changes
+    # Broadcasting happens inside EmailFetcher only when INBOX messages are found
+    Logger.info("Checking for new INBOX emails for account: #{account.email}")
 
-    # Broadcast that we're processing emails for this account
-    Phoenix.PubSub.broadcast(
-      JumpEmailCategorization.PubSub,
-      "gmail_account:#{account.id}",
-      {:fetching_emails, account.id}
-    )
-
-    EmailFetcher.fetch_and_store_emails(account)
-
-    # Broadcast that we're done processing
-    Phoenix.PubSub.broadcast(
-      JumpEmailCategorization.PubSub,
-      "gmail_account:#{account.id}",
-      {:fetch_complete, account.id}
-    )
+    EmailFetcher.process_new_emails_from_history(account, history_id)
   end
 end

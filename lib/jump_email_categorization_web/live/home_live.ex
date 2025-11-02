@@ -2,8 +2,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
   use JumpEmailCategorizationWeb, :live_view
 
   alias JumpEmailCategorizationWeb.EmailComponents
-  alias JumpEmailCategorization.Gmail
-  alias JumpEmailCategorization.Categories
+  alias JumpEmailCategorization.{Gmail, Categories, Emails}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -20,43 +19,32 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
       )
     end)
 
+    # Subscribe to user emails for real-time updates
+    Phoenix.PubSub.subscribe(
+      JumpEmailCategorization.PubSub,
+      "user_emails:#{user.id}"
+    )
+
     # Load categories from database
     categories = Categories.list_categories(user.id)
 
-    # Sample data - replace with actual data from Gmail API later
-    emails = [
-      %{
-        id: "1",
-        subject: "Subject 1",
-        summary: "Summary of email 1 with a brief description of the email contents",
-        content:
-          "Email actual content text for Subject 1.\n\nThis is the full body of the email message that will be displayed when the user clicks on this email in the list."
-      },
-      %{
-        id: "2",
-        subject: "Subject 2",
-        summary: "Summary of email 1 with a brief description of the email contents",
-        content:
-          "Email actual content text for Subject 2.\n\nThis is the full body of the email message that will be displayed when the user clicks on this email in the list."
-      },
-      %{
-        id: "3",
-        subject: "Subject 3",
-        summary: "Summary of email 1 with a brief description of the email contents",
-        content:
-          "Email actual content text for Subject 3.\n\nThis is the full body of the email message that will be displayed when the user clicks on this email in the list."
-      }
-    ]
+    # Load paginated emails from database
+    pagination = Emails.list_emails_paginated(user.id, page: 1, page_size: 30)
+
+    # Select first email if any exist
+    selected_email = List.first(pagination.emails)
+    selected_email_id = if selected_email, do: selected_email.id, else: nil
 
     socket =
       socket
-      |> assign(:emails, emails)
+      |> assign(:emails, pagination.emails)
+      |> assign(:pagination, pagination)
       |> assign(:gmail_accounts, gmail_accounts)
       |> assign(:categories, categories)
       |> assign(:selected_account, "all")
       |> assign(:selected_category, "")
-      |> assign(:selected_email_id, "1")
-      |> assign(:selected_email, Enum.find(emails, &(&1.id == "1")))
+      |> assign(:selected_email_id, selected_email_id)
+      |> assign(:selected_email, selected_email)
       |> assign(:selected_for_unsubscribe, [])
       |> assign(:show_delete_modal, false)
       |> assign(:delete_account_email, "")
@@ -90,8 +78,29 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
     socket =
       socket
       |> assign(:fetching_accounts, fetching_accounts)
+      |> reload_emails()
       |> maybe_update_loading_message()
       |> put_flash(:info, "Emails loaded successfully")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:new_email, _email}, socket) do
+    # Reload emails when a new email is created
+    socket = reload_emails(socket)
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("select-account", %{"id" => account_id}, socket) do
+    # Reset to page 1 when switching accounts
+    socket =
+      socket
+      |> assign(:selected_account, account_id)
+      |> assign(:selected_category, "")
+      |> update(:pagination, fn pagination -> %{pagination | page: 1} end)
+      |> reload_emails()
 
     {:noreply, socket}
   end
@@ -111,13 +120,44 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
   end
 
   @impl true
-  def handle_event("select-email", %{"id" => email_id}, socket) do
+  def handle_event("select-email", %{"id" => email_id_str}, socket) do
+    email_id = String.to_integer(email_id_str)
     email = Enum.find(socket.assigns.emails, &(&1.id == email_id))
 
     socket =
       socket
       |> assign(:selected_email_id, email_id)
       |> assign(:selected_email, email)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("paginate", %{"page" => page_str}, socket) do
+    page = String.to_integer(page_str)
+    user = socket.assigns.current_scope.user
+
+    pagination = Emails.list_emails_paginated(user.id, page: page, page_size: 30)
+
+    # If current selected email is not in new page, select first email
+    selected_email_id = socket.assigns.selected_email_id
+    email_ids = Enum.map(pagination.emails, & &1.id)
+
+    {selected_email_id, selected_email} =
+      if selected_email_id in email_ids do
+        email = Enum.find(pagination.emails, &(&1.id == selected_email_id))
+        {selected_email_id, email}
+      else
+        first_email = List.first(pagination.emails)
+        {if(first_email, do: first_email.id, else: nil), first_email}
+      end
+
+    socket =
+      socket
+      |> assign(:emails, pagination.emails)
+      |> assign(:pagination, pagination)
+      |> assign(:selected_email_id, selected_email_id)
+      |> assign(:selected_email, selected_email)
 
     {:noreply, socket}
   end
@@ -185,10 +225,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
       account ->
         # Verify the account belongs to the current user
         if account.user_id == user.id do
-          # Revoke OAuth access from Google
-          Gmail.revoke_oauth_access(account)
-
-          # Delete from database
+          # Delete account (this stops push notifications, revokes OAuth, and deletes from DB)
           case Gmail.delete_gmail_account(account) do
             {:ok, _} ->
               # Reload Gmail accounts
@@ -197,6 +234,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
               socket =
                 socket
                 |> assign(:gmail_accounts, gmail_accounts)
+                |> reload_emails()
                 |> assign(:show_delete_modal, false)
                 |> assign(:delete_account_email, "")
                 |> assign(:delete_account_id, nil)
@@ -346,6 +384,46 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
     end
   end
 
+  defp reload_emails(socket) do
+    user = socket.assigns.current_scope.user
+    current_page = socket.assigns.pagination.page
+    selected_account = socket.assigns.selected_account
+
+    # Build filter options
+    filter_opts = [page: current_page, page_size: 30]
+
+    filter_opts =
+      if selected_account != "all" do
+        case Integer.parse(selected_account) do
+          {account_id, _} -> Keyword.put(filter_opts, :gmail_account_id, account_id)
+          :error -> filter_opts
+        end
+      else
+        filter_opts
+      end
+
+    pagination = Emails.list_emails_paginated(user.id, filter_opts)
+
+    # If current selected email still exists, keep it selected
+    selected_email_id = socket.assigns.selected_email_id
+    email_ids = Enum.map(pagination.emails, & &1.id)
+
+    {selected_email_id, selected_email} =
+      if selected_email_id && selected_email_id in email_ids do
+        email = Enum.find(pagination.emails, &(&1.id == selected_email_id))
+        {selected_email_id, email}
+      else
+        first_email = List.first(pagination.emails)
+        {if(first_email, do: first_email.id, else: nil), first_email}
+      end
+
+    socket
+    |> assign(:emails, pagination.emails)
+    |> assign(:pagination, pagination)
+    |> assign(:selected_email_id, selected_email_id)
+    |> assign(:selected_email, selected_email)
+  end
+
   defp maybe_update_loading_message(socket) do
     cond do
       MapSet.size(socket.assigns.fetching_accounts) > 0 and
@@ -377,7 +455,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <%!-- Three-column layout --%>
-      <div class="h-full grid grid-cols-[290px_1fr_2fr] overflow-hidden">
+      <div class="h-full grid grid-cols-[290px_minmax(400px,1fr)_minmax(500px,2fr)] overflow-hidden">
         <%!-- Left Sidebar: Gmail accounts --%>
         <EmailComponents.sidebar accounts={@gmail_accounts} selected_account={@selected_account} />
 
@@ -393,6 +471,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
           show_delete_category_modal={@show_delete_category_modal}
           category_to_delete={@category_to_delete}
           loading_message={@loading_message}
+          pagination={@pagination}
         />
 
         <%!-- Right Column: Email detail --%>

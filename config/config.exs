@@ -82,7 +82,7 @@ config :ueberauth, Ueberauth,
     google:
       {Ueberauth.Strategy.Google,
        [
-         default_scope: "email profile https://www.googleapis.com/auth/gmail.readonly",
+         default_scope: "email profile https://www.googleapis.com/auth/gmail.modify",
          prompt: "select_account"
        ]}
   ]
@@ -95,3 +95,6 @@ config :ueberauth, Ueberauth.Strategy.Google.OAuth,
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
+
+config :jump_email_categorization,
+  gmail_pubsub_topic: "projects/jumpelixiremailcategorization/topics/gmail-notifications"

@@ -12,7 +12,7 @@ defmodule JumpEmailCategorization.Gmail.EmailFetcher do
   require Logger
 
   # Configurable limit for email fetching
-  @max_emails_to_fetch 100
+  @max_emails_to_fetch 10
 
   @doc """
   Starts an async task to fetch emails for a Gmail account.
@@ -62,16 +62,111 @@ defmodule JumpEmailCategorization.Gmail.EmailFetcher do
   end
 
   @doc """
-  Processes a single new email (used for Pub/Sub notifications).
+  Processes new emails from history (used for Pub/Sub notifications).
+  Uses the Gmail History API to identify which specific messages were just added,
+  then processes only those new messages.
   """
-  def process_single_email(%GmailAccount{} = account, message_id) do
-    Logger.info("Processing single email #{message_id} for account: #{account.email}")
+  def process_new_emails_from_history(%GmailAccount{} = account, current_history_id) do
+    Logger.info(
+      "Processing new emails for account: #{account.email}, historyId: #{current_history_id}"
+    )
 
     account = ensure_valid_token(account)
 
+    # If this is the first notification, just store the history_id and wait for the next one
+    if is_nil(account.last_history_id) do
+      Logger.info(
+        "First notification for #{account.email}, storing historyId #{current_history_id}"
+      )
+
+      update_history_id(account, current_history_id)
+      {:ok, []}
+    else
+      # Fetch history since last known history_id to find which messages are new
+      case ApiClient.get_history(account, account.last_history_id) do
+        {:ok, %{"history" => history}} when is_list(history) ->
+          # Extract only the message IDs that were added to INBOX (new emails received)
+          # Filter out drafts, sent emails, and other non-inbox messages
+          new_inbox_message_ids =
+            history
+            |> Enum.flat_map(fn entry ->
+              entry
+              |> Map.get("messagesAdded", [])
+              |> Enum.filter(fn message_added ->
+                # Only process messages that have INBOX label
+                labels = get_in(message_added, ["message", "labelIds"]) || []
+                "INBOX" in labels
+              end)
+              |> Enum.map(fn %{"message" => %{"id" => id}} -> id end)
+            end)
+            |> Enum.uniq()
+
+          if length(new_inbox_message_ids) > 0 do
+            Logger.info(
+              "Found #{length(new_inbox_message_ids)} new INBOX message(s) for #{account.email}"
+            )
+
+            # Broadcast that we're processing emails (only when we have INBOX messages)
+            Phoenix.PubSub.broadcast(
+              JumpEmailCategorization.PubSub,
+              "gmail_account:#{account.id}",
+              {:fetching_emails, account.id}
+            )
+
+            # Process each new inbox message
+            results =
+              Enum.map(new_inbox_message_ids, fn message_id ->
+                process_single_new_email(account, message_id)
+              end)
+
+            # Update the history_id for next time
+            update_history_id(account, current_history_id)
+
+            # Broadcast that we're done processing
+            Phoenix.PubSub.broadcast(
+              JumpEmailCategorization.PubSub,
+              "gmail_account:#{account.id}",
+              {:fetch_complete, account.id}
+            )
+
+            {:ok, results}
+          else
+            # History changes exist but no new INBOX messages (e.g., drafts, sent emails, label changes)
+            Logger.info("History changes detected for #{account.email} but no new INBOX messages")
+
+            update_history_id(account, current_history_id)
+            {:ok, []}
+          end
+
+        {:ok, %{}} ->
+          # No history changes
+          Logger.info("No new messages in history for #{account.email}")
+          update_history_id(account, current_history_id)
+          {:ok, []}
+
+        {:error, reason} ->
+          Logger.error("Failed to fetch history for #{account.email}: #{inspect(reason)}")
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Processes a single new email that just arrived.
+  Stores it, categorizes it (TODO), summarizes it (TODO), and archives it in Gmail.
+  """
+  def process_single_new_email(%GmailAccount{} = account, message_id) do
+    Logger.info("Processing new email #{message_id} for account: #{account.email}")
+
     case fetch_and_store_message(account, message_id) do
       {:ok, email} ->
-        # Archive the email
+        # TODO: Process categorization
+        # spawn(fn -> Emails.categorize_email(email) end)
+
+        # TODO: Process summarization
+        # spawn(fn -> Emails.summarize_email(email) end)
+
+        # Archive the email in Gmail
         case ApiClient.archive_message(account, message_id) do
           {:ok, _} ->
             Emails.mark_as_archived(email)
@@ -80,11 +175,12 @@ defmodule JumpEmailCategorization.Gmail.EmailFetcher do
 
           {:error, reason} ->
             Logger.error("Failed to archive email #{message_id}: #{inspect(reason)}")
-            {:error, reason}
+            # Email was stored but not archived - still return success
+            {:ok, email}
         end
 
       {:error, reason} ->
-        Logger.error("Failed to process email #{message_id}: #{inspect(reason)}")
+        Logger.error("Failed to store email #{message_id}: #{inspect(reason)}")
         {:error, reason}
     end
   end
@@ -186,5 +282,11 @@ defmodule JumpEmailCategorization.Gmail.EmailFetcher do
   defp calculate_expiry(expires_in) when is_integer(expires_in) do
     DateTime.utc_now()
     |> DateTime.add(expires_in, :second)
+  end
+
+  defp update_history_id(account, history_id) do
+    account
+    |> GmailAccount.changeset(%{last_history_id: to_string(history_id)})
+    |> Repo.update()
   end
 end

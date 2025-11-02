@@ -11,6 +11,7 @@ defmodule JumpEmailCategorization.Gmail.GmailAccount do
     field :refresh_token, :string
     field :token_expires_at, :utc_datetime
     field :scopes, {:array, :string}, default: []
+    field :last_history_id, :string
 
     belongs_to :user, JumpEmailCategorization.Accounts.User
 
@@ -29,7 +30,8 @@ defmodule JumpEmailCategorization.Gmail.GmailAccount do
       :access_token,
       :refresh_token,
       :token_expires_at,
-      :scopes
+      :scopes,
+      :last_history_id
     ])
     |> validate_required([:user_id, :email, :google_id])
     |> unique_constraint([:user_id, :google_id])
