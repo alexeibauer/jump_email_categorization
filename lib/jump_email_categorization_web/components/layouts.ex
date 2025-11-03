@@ -38,7 +38,7 @@ defmodule JumpEmailCategorizationWeb.Layouts do
     <header class="navbar bg-base-100 border-b border-base-300 px-6">
       <div class="flex-1">
         <a href="/" class="text-lg font-semibold">
-          App title
+          Jump Email Categorization App
         </a>
       </div>
       <div class="flex-none">
