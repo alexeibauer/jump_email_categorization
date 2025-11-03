@@ -76,7 +76,8 @@ defmodule JumpEmailCategorization.Accounts do
   """
   def register_user(attrs) do
     %User{}
-    |> User.email_changeset(attrs)
+    |> User.registration_changeset(attrs)
+    |> User.confirm_changeset()
     |> Repo.insert()
   end
 
@@ -95,6 +96,19 @@ defmodule JumpEmailCategorization.Accounts do
   end
 
   def sudo_mode?(_user, _minutes), do: false
+
+  @doc """
+  Returns an `%Ecto.Changeset{}` for tracking user registration changes.
+
+  ## Examples
+
+      iex> change_user_registration(user)
+      %Ecto.Changeset{data: %User{}}
+
+  """
+  def change_user_registration(user, attrs \\ %{}) do
+    User.registration_changeset(user, attrs, hash_password: false, validate_email: false)
+  end
 
   @doc """
   Returns an `%Ecto.Changeset{}` for changing the user email.

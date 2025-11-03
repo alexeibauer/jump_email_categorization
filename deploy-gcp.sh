@@ -20,6 +20,7 @@ PROJECT_ID="${GCP_PROJECT_ID:-jumpelixiremailcategorization}"
 REGION="${GCP_REGION:-us-central1}"
 SERVICE_NAME="${SERVICE_NAME:-jump-email-categorization}"
 DB_INSTANCE="${DB_INSTANCE:-jump-email-db}"
+PHX_HOST="jump-email-categorization-1055920119163.us-central1.run.app"
 
 echo "🚀 Deploying Jump Email Categorization to GCP"
 echo "================================================"
@@ -56,7 +57,7 @@ gcloud run deploy $SERVICE_NAME \
   --timeout=300 \
   --add-cloudsql-instances=${PROJECT_ID}:${REGION}:${DB_INSTANCE} \
   --set-secrets=SECRET_KEY_BASE=secret-key-base:latest,DATABASE_URL=database-url:latest,GOOGLE_CLIENT_ID=google-client-id:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest,OPENAI_API_KEY=openai-api-key:latest,SMTP_USERNAME=smtp-username:latest,SMTP_PASSWORD=smtp-password:latest \
-  --set-env-vars=PHX_HOST=${SERVICE_NAME}-PLACEHOLDER-uc.a.run.app,SMTP_RELAY=smtp.sendgrid.net,SMTP_PORT=587,POOL_SIZE=2
+  --set-env-vars=PHX_HOST=${PHX_HOST},SMTP_RELAY=smtp.sendgrid.net,SMTP_PORT=587,POOL_SIZE=2
 
 echo ""
 echo "✅ Deployment complete!"

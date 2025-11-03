@@ -43,8 +43,8 @@ RUN mix release
 # Start a new build stage
 FROM debian:bookworm-slim AS app
 
-# Cache buster: 2025-11-03-03:48-fix-tls-certs
 # Install runtime dependencies (including ca-certificates for TLS/SSL)
+# Cache buster: 2025-11-03-oauth-config-fix
 RUN apt-get update && \
     apt-get install -y libstdc++6 openssl locales ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \

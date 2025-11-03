@@ -87,14 +87,10 @@ config :ueberauth, Ueberauth,
        ]}
   ]
 
-# Configure Google OAuth (values loaded from runtime.exs or dev.exs)
-config :ueberauth, Ueberauth.Strategy.Google.OAuth,
-  client_id: System.get_env("GOOGLE_CLIENT_ID"),
-  client_secret: System.get_env("GOOGLE_CLIENT_SECRET")
+# Configure Google OAuth (moved to runtime.exs for production compatibility)
 
 config :jump_email_categorization,
-  gmail_pubsub_topic: "projects/jumpelixiremailcategorization/topics/gmail-notifications",
-  openai_api_key: System.get_env("OPENAI_API_KEY")
+  gmail_pubsub_topic: "projects/jumpelixiremailcategorization/topics/gmail-notifications"
 
 # Configure Oban for background job processing
 config :jump_email_categorization, Oban,

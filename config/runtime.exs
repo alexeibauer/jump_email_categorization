@@ -110,9 +110,19 @@ if config_env() == :prod do
     port: String.to_integer(System.get_env("SMTP_PORT") || "587"),
     ssl: false,
     tls: :always,
-    tls_options: [
-      cacerts: :public_key.cacerts_get()
-    ],
     auth: :always,
     retries: 2
+
+  # ## Configuring Google OAuth
+  #
+  # Configure Google OAuth credentials at runtime
+  config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+    client_id: System.get_env("GOOGLE_CLIENT_ID"),
+    client_secret: System.get_env("GOOGLE_CLIENT_SECRET")
+
+  # ## Configuring OpenAI API
+  #
+  # Configure OpenAI API key at runtime
+  config :jump_email_categorization,
+    openai_api_key: System.get_env("OPENAI_API_KEY")
 end
