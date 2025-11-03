@@ -99,7 +99,7 @@ config :jump_email_categorization,
 # Configure Oban for background job processing
 config :jump_email_categorization, Oban,
   repo: JumpEmailCategorization.Repo,
-  queues: [emails: 10],
+  queues: [emails: 10, unsubscribe: 5],
   plugins: [
     Oban.Plugins.Pruner,
     {Oban.Plugins.Cron, crontab: []}

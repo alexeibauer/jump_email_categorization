@@ -4,8 +4,10 @@ defmodule JumpEmailCategorization.Emails do
   """
 
   import Ecto.Query, warn: false
+  require Logger
   alias JumpEmailCategorization.Repo
   alias JumpEmailCategorization.Emails.Email
+  alias JumpEmailCategorization.Gmail.{ApiClient, GmailAccount}
 
   @doc """
   Returns the list of emails for a user.
@@ -157,11 +159,148 @@ defmodule JumpEmailCategorization.Emails do
   end
 
   @doc """
-  Deletes an email.
+  Deletes an email from the database and moves it to Gmail trash.
+  If the Gmail trash operation fails, the email is still deleted from the database.
   """
   def delete_email(%Email{} = email) do
-    Repo.delete(email)
+    # Preload the gmail_account association if not already loaded
+    email = Repo.preload(email, :gmail_account)
+
+    # Try to move the email to Gmail trash first
+    gmail_result =
+      case email.gmail_account do
+        %GmailAccount{} = account ->
+          Logger.info(
+            "Attempting to trash Gmail message #{email.gmail_message_id} for email #{email.id}"
+          )
+
+          # Ensure token is valid before making the request
+          account = ensure_valid_token(account)
+
+          case ApiClient.trash_message(account, email.gmail_message_id) do
+            {:ok, _response} ->
+              Logger.info("Successfully trashed Gmail message #{email.gmail_message_id}")
+              :ok
+
+            {:error, {:api_error, 401, _body}} ->
+              Logger.warning(
+                "Gmail token expired for email #{email.id}, attempting to refresh and retry"
+              )
+
+              # Token might have expired between check and use, try refreshing and retrying once
+              case refresh_token_and_retry_trash(account, email.gmail_message_id) do
+                :ok ->
+                  Logger.info(
+                    "Successfully trashed Gmail message #{email.gmail_message_id} after token refresh"
+                  )
+
+                  :ok
+
+                :failed ->
+                  Logger.error(
+                    "Failed to trash Gmail message #{email.gmail_message_id} even after token refresh"
+                  )
+
+                  :failed
+              end
+
+            {:error, reason} ->
+              Logger.warning(
+                "Failed to trash Gmail message #{email.gmail_message_id}: #{inspect(reason)}"
+              )
+
+              :failed
+          end
+
+        nil ->
+          Logger.warning(
+            "Email #{email.id} has no associated Gmail account, skipping Gmail trash"
+          )
+
+          :no_account
+      end
+
+    # Delete from database regardless of Gmail trash result
+    # This ensures we clean up our database even if Gmail API fails
+    result = Repo.delete(email)
+
+    case result do
+      {:ok, deleted_email} ->
+        Logger.info(
+          "Successfully deleted email #{email.id} from database (Gmail: #{gmail_result})"
+        )
+
+        {:ok, deleted_email}
+
+      {:error, changeset} ->
+        Logger.error("Failed to delete email #{email.id} from database: #{inspect(changeset)}")
+        {:error, changeset}
+    end
   end
+
+  # Private helper functions for token management
+
+  defp ensure_valid_token(%GmailAccount{} = account) do
+    if token_expired?(account) do
+      Logger.info("Gmail token expired, refreshing for account #{account.id}")
+
+      case ApiClient.refresh_access_token(account) do
+        {:ok, %{access_token: new_token, expires_in: expires_in}} ->
+          {:ok, updated_account} =
+            account
+            |> GmailAccount.changeset(%{
+              access_token: new_token,
+              token_expires_at: calculate_token_expiry(expires_in)
+            })
+            |> Repo.update()
+
+          Logger.info("Successfully refreshed token for Gmail account #{account.id}")
+          updated_account
+
+        {:error, reason} ->
+          Logger.error("Failed to refresh token for account #{account.id}: #{inspect(reason)}")
+          account
+      end
+    else
+      account
+    end
+  end
+
+  defp refresh_token_and_retry_trash(%GmailAccount{} = account, message_id) do
+    case ApiClient.refresh_access_token(account) do
+      {:ok, %{access_token: new_token, expires_in: expires_in}} ->
+        {:ok, updated_account} =
+          account
+          |> GmailAccount.changeset(%{
+            access_token: new_token,
+            token_expires_at: calculate_token_expiry(expires_in)
+          })
+          |> Repo.update()
+
+        # Retry with fresh token
+        case ApiClient.trash_message(updated_account, message_id) do
+          {:ok, _response} -> :ok
+          {:error, _reason} -> :failed
+        end
+
+      {:error, _reason} ->
+        :failed
+    end
+  end
+
+  defp token_expired?(%GmailAccount{token_expires_at: nil}), do: false
+
+  defp token_expired?(%GmailAccount{token_expires_at: expires_at}) do
+    DateTime.compare(DateTime.utc_now(), expires_at) == :gt
+  end
+
+  defp calculate_token_expiry(expires_in) when is_integer(expires_in) do
+    DateTime.utc_now()
+    |> DateTime.add(expires_in, :second)
+    |> DateTime.add(-300, :second)
+  end
+
+  defp calculate_token_expiry(_), do: nil
 
   @doc """
   Categorizes an email based on its content.

@@ -130,6 +130,24 @@ defmodule JumpEmailCategorization.Gmail.ApiClient do
   end
 
   @doc """
+  Moves a message to the trash folder.
+  """
+  def trash_message(%GmailAccount{} = account, message_id) do
+    url = "#{@gmail_api_base}/users/me/messages/#{message_id}/trash"
+
+    case make_request(:post, url, account, json: %{}) do
+      {:ok, %{status: 200, body: body}} ->
+        {:ok, body}
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, {:api_error, status, body}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Sets up Gmail push notifications via Pub/Sub.
   """
   def setup_push_notifications(%GmailAccount{} = account, topic_name) do

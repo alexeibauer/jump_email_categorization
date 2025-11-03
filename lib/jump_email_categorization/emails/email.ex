@@ -21,6 +21,12 @@ defmodule JumpEmailCategorization.Emails.Email do
     field :received_at, :utc_datetime
     field :archived_at, :utc_datetime
     field :internal_date, :integer
+    field :unsubscribe_link, :string
+    field :unsubscribe_status, :string
+    field :unsubscribe_attempted_at, :utc_datetime
+    field :unsubscribe_completed_at, :utc_datetime
+    field :unsubscribe_error, :string
+    field :unsubscribe_method, :string
 
     belongs_to :gmail_account, GmailAccount
     belongs_to :user, User
@@ -49,7 +55,13 @@ defmodule JumpEmailCategorization.Emails.Email do
       :internal_date,
       :gmail_account_id,
       :user_id,
-      :category_id
+      :category_id,
+      :unsubscribe_link,
+      :unsubscribe_status,
+      :unsubscribe_attempted_at,
+      :unsubscribe_completed_at,
+      :unsubscribe_error,
+      :unsubscribe_method
     ])
     |> validate_required([:gmail_message_id, :gmail_account_id, :user_id])
     |> unique_constraint([:gmail_account_id, :gmail_message_id])

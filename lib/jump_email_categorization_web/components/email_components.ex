@@ -152,6 +152,30 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
           <% end %>
         </p>
       </div>
+      <%!-- Select All Checkbox --%>
+      <div
+        :if={@emails != [] && !@loading_message}
+        class="px-4 py-2 border-b border-base-300 bg-base-50"
+      >
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            checked={
+              length(@selected_for_unsubscribe) > 0 &&
+                length(@selected_for_unsubscribe) == length(@emails)
+            }
+            phx-click="toggle-select-all"
+          />
+          <span class="text-sm font-medium">
+            <%= if length(@selected_for_unsubscribe) > 0 do %>
+              {length(@selected_for_unsubscribe)} selected
+            <% else %>
+              Select all
+            <% end %>
+          </span>
+        </label>
+      </div>
       <div class="flex-1 overflow-y-auto">
         <%= cond do %>
           <% @loading_message -> %>
@@ -176,7 +200,7 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
                     <input
                       type="checkbox"
                       class="checkbox checkbox-sm mt-1"
-                      checked={email.id in @selected_for_unsubscribe}
+                      checked={to_string(email.id) in @selected_for_unsubscribe}
                       phx-click="toggle-email-selection"
                       phx-value-id={email.id}
                     />
@@ -442,6 +466,62 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
               <span class="font-semibold">Summary:</span>
               {@email.summary}
             </div>
+
+            <%!-- Unsubscribe Status --%>
+            <div
+              :if={@email.unsubscribe_status}
+              class={[
+                "mt-3 p-3 rounded-lg text-sm",
+                @email.unsubscribe_status == "success" && "bg-success/10 text-success",
+                @email.unsubscribe_status == "failed" && "bg-error/10 text-error",
+                @email.unsubscribe_status == "processing" && "bg-info/10 text-info",
+                @email.unsubscribe_status == "not_found" && "bg-warning/10 text-warning",
+                @email.unsubscribe_status == "pending_confirmation" && "bg-warning/10 text-warning"
+              ]}
+            >
+              <div class="font-semibold mb-1">Unsubscribe Status</div>
+
+              <%= cond do %>
+                <% @email.unsubscribe_status == "success" -> %>
+                  <p>✓ Successfully unsubscribed</p>
+                  <p :if={@email.unsubscribe_completed_at} class="text-xs mt-1 opacity-80">
+                    Completed: {Calendar.strftime(
+                      @email.unsubscribe_completed_at,
+                      "%B %d, %Y at %I:%M %p"
+                    )}
+                  </p>
+                <% @email.unsubscribe_status == "processing" -> %>
+                  <p>
+                    <span class="loading loading-spinner loading-xs"></span> Processing unsubscribe...
+                  </p>
+                <% @email.unsubscribe_status == "failed" -> %>
+                  <p>✗ Unsubscribe failed</p>
+                  <p :if={@email.unsubscribe_error} class="text-xs mt-1 opacity-80">
+                    {@email.unsubscribe_error}
+                  </p>
+                <% @email.unsubscribe_status == "not_found" -> %>
+                  <p>⚠ No unsubscribe link found in this email</p>
+                <% @email.unsubscribe_status == "pending_confirmation" -> %>
+                  <p>⏳ Pending manual confirmation</p>
+                  <a
+                    :if={@email.unsubscribe_link}
+                    href={@email.unsubscribe_link}
+                    target="_blank"
+                    class="link text-xs mt-1 inline-block"
+                  >
+                    Complete unsubscribe manually →
+                  </a>
+                <% true -> %>
+                  <p>Status: {@email.unsubscribe_status}</p>
+              <% end %>
+
+              <p :if={@email.unsubscribe_link} class="text-xs mt-2 opacity-70 break-all">
+                Link:
+                <a href={@email.unsubscribe_link} target="_blank" class="link">
+                  {@email.unsubscribe_link}
+                </a>
+              </p>
+            </div>
           </div>
 
           <%!-- Email body --%>
@@ -460,7 +540,7 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
   end
 
   @doc """
-  Renders the unsubscribe toast that appears when emails are selected.
+  Renders the action toast that appears when emails are selected.
   """
   attr :selected_count, :integer, default: 0
   attr :show, :boolean, default: false
@@ -471,9 +551,9 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
       :if={@show && @selected_count > 0}
       class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4"
     >
-      <div class="bg-base-100 shadow-2xl rounded-lg border border-base-300 px-6 py-4 flex items-center gap-6">
-        <p class="text-base font-medium">
-          Unsubscribe from {@selected_count} {if @selected_count == 1, do: "email", else: "emails"}?
+      <div class="bg-base-100 shadow-2xl rounded-lg border border-base-300 px-6 py-4">
+        <p class="text-base font-semibold mb-3">
+          Additional actions on selected emails:
         </p>
         <div class="flex gap-3">
           <button
@@ -481,11 +561,18 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
             class="btn btn-primary btn-sm"
             phx-click="confirm-unsubscribe"
           >
-            Yes
+            Unsubscribe from {@selected_count} {if @selected_count == 1, do: "email", else: "emails"}
           </button>
           <button
             type="button"
-            class="link link-hover text-sm"
+            class="btn btn-error btn-sm text-white"
+            phx-click="show-delete-emails-modal"
+          >
+            Delete {@selected_count} {if @selected_count == 1, do: "email", else: "emails"}
+          </button>
+          <button
+            type="button"
+            class="link link-hover text-sm self-center"
             phx-click="cancel-unsubscribe"
           >
             Cancel
@@ -528,6 +615,41 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
       </div>
       <form method="dialog" class="modal-backdrop">
         <button phx-click="cancel-delete-account">close</button>
+      </form>
+    </dialog>
+    """
+  end
+
+  @doc """
+  Renders a confirmation modal for deleting multiple emails.
+  """
+  attr :show, :boolean, default: false
+  attr :selected_count, :integer, default: 0
+
+  def delete_emails_modal(assigns) do
+    ~H"""
+    <dialog :if={@show} id="delete_emails_modal" class="modal modal-open">
+      <div class="modal-box">
+        <h3 class="font-bold text-lg mb-4">Delete Emails</h3>
+        <p class="py-4">
+          Are you sure of deleting {@selected_count} {if @selected_count == 1,
+            do: "email",
+            else: "emails"}?
+          <br /><span class="font-semibold text-error">
+            This will also move the email to Gmail's Trash folder.
+          </span>
+        </p>
+        <div class="modal-action">
+          <button type="button" class="btn btn-error" phx-click="confirm-delete-emails">
+            Yes, delete {@selected_count} {if @selected_count == 1, do: "email", else: "emails"}
+          </button>
+          <button type="button" class="link link-hover" phx-click="cancel-delete-emails">
+            Cancel
+          </button>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop">
+        <button phx-click="cancel-delete-emails">close</button>
       </form>
     </dialog>
     """

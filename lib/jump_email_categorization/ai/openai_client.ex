@@ -99,7 +99,11 @@ defmodule JumpEmailCategorization.AI.OpenAIClient do
 
   # Private functions
 
-  defp chat_completion(prompt, opts) do
+  @doc """
+  Makes a chat completion request to OpenAI.
+  Public for use by other AI modules.
+  """
+  def chat_completion(prompt, opts) do
     api_key = Application.get_env(:jump_email_categorization, :openai_api_key)
 
     unless api_key do

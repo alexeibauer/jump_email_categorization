@@ -57,6 +57,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
       |> assign(:loading_message, nil)
       |> assign(:categorizing_emails, MapSet.new())
       |> assign(:summarizing_emails, MapSet.new())
+      |> assign(:show_delete_emails_modal, false)
 
     {:ok, socket}
   end
@@ -162,6 +163,23 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
   end
 
   @impl true
+  def handle_event("toggle-select-all", _params, socket) do
+    selected = socket.assigns.selected_for_unsubscribe
+    emails = socket.assigns.emails
+
+    new_selected =
+      if length(selected) == length(emails) do
+        # All are selected, so deselect all
+        []
+      else
+        # Select all emails
+        Enum.map(emails, fn email -> to_string(email.id) end)
+      end
+
+    {:noreply, assign(socket, :selected_for_unsubscribe, new_selected)}
+  end
+
+  @impl true
   def handle_event("select-email", %{"id" => email_id_str}, socket) do
     email_id = String.to_integer(email_id_str)
     email = Enum.find(socket.assigns.emails, &(&1.id == email_id))
@@ -208,15 +226,20 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
   def handle_event("confirm-unsubscribe", _params, socket) do
     selected_ids = socket.assigns.selected_for_unsubscribe
 
-    # TODO: Add your unsubscribe logic here
-    # For now, just log the selected IDs
-    IO.inspect(selected_ids, label: "Unsubscribing from emails")
+    # Enqueue unsubscribe jobs for each selected email
+    Enum.each(selected_ids, fn email_id_str ->
+      email_id = String.to_integer(email_id_str)
+
+      %{email_id: email_id}
+      |> JumpEmailCategorization.Workers.UnsubscribeWorker.new()
+      |> Oban.insert()
+    end)
 
     # Clear selection after processing
     socket =
       socket
       |> assign(:selected_for_unsubscribe, [])
-      |> put_flash(:info, "Unsubscribed from #{length(selected_ids)} email(s)")
+      |> put_flash(:info, "Unsubscribe process started for #{length(selected_ids)} email(s)")
 
     {:noreply, socket}
   end
@@ -224,6 +247,56 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
   @impl true
   def handle_event("cancel-unsubscribe", _params, socket) do
     {:noreply, assign(socket, :selected_for_unsubscribe, [])}
+  end
+
+  @impl true
+  def handle_event("show-delete-emails-modal", _params, socket) do
+    {:noreply, assign(socket, :show_delete_emails_modal, true)}
+  end
+
+  @impl true
+  def handle_event("cancel-delete-emails", _params, socket) do
+    {:noreply, assign(socket, :show_delete_emails_modal, false)}
+  end
+
+  @impl true
+  def handle_event("confirm-delete-emails", _params, socket) do
+    selected_ids = socket.assigns.selected_for_unsubscribe
+
+    # Delete each selected email
+    {success_count, errors} =
+      Enum.reduce(selected_ids, {0, []}, fn email_id_str, {success, errors} ->
+        email_id = String.to_integer(email_id_str)
+
+        case Emails.get_email!(email_id) |> Emails.delete_email() do
+          {:ok, _} ->
+            {success + 1, errors}
+
+          {:error, reason} ->
+            {success, [{email_id, reason} | errors]}
+        end
+      end)
+
+    # Clear selection and close modal
+    socket =
+      socket
+      |> assign(:selected_for_unsubscribe, [])
+      |> assign(:show_delete_emails_modal, false)
+      |> reload_emails()
+
+    # Show appropriate flash message
+    socket =
+      if errors == [] do
+        put_flash(socket, :info, "Successfully deleted #{success_count} email(s)")
+      else
+        put_flash(
+          socket,
+          :error,
+          "Deleted #{success_count} email(s), but #{length(errors)} failed"
+        )
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -617,6 +690,12 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
         show={@show_delete_modal}
         account_email={@delete_account_email}
         account_id={@delete_account_id}
+      />
+
+      <%!-- Delete Emails Confirmation Modal --%>
+      <EmailComponents.delete_emails_modal
+        show={@show_delete_emails_modal}
+        selected_count={length(@selected_for_unsubscribe)}
       />
     </Layouts.app>
     """
