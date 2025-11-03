@@ -18,8 +18,38 @@ defmodule JumpEmailCategorization.Workers.EmailProcessorWorker do
   require Logger
 
   @impl Oban.Worker
+  def perform(%Oban.Job{args: %{"email_id" => email_id, "action" => action}}) do
+    Logger.info("Processing email #{email_id} for action: #{action}")
+
+    case Repo.get(Emails.Email, email_id) do
+      nil ->
+        Logger.error("Email #{email_id} not found in database")
+        {:error, :email_not_found}
+
+      email ->
+        # Preload any associations if needed
+        email = Repo.preload(email, [:user, :category])
+
+        case action do
+          "summarize" ->
+            summarize_email(email)
+
+          "categorize" ->
+            categorize_email(email)
+
+          _ ->
+            Logger.error("Unknown action: #{action}")
+            {:error, :unknown_action}
+        end
+    end
+  end
+
+  # Fallback for legacy job format (no action specified - do both)
+  @impl Oban.Worker
   def perform(%Oban.Job{args: %{"email_id" => email_id}}) do
-    Logger.info("Processing email #{email_id} for AI summarization and categorization")
+    Logger.info(
+      "Processing email #{email_id} for AI summarization and categorization (legacy format)"
+    )
 
     case Repo.get(Emails.Email, email_id) do
       nil ->
@@ -33,7 +63,17 @@ defmodule JumpEmailCategorization.Workers.EmailProcessorWorker do
         # Step 1: Summarize the email
         summary_result = summarize_email(email)
 
-        # Step 2: Categorize the email
+        # Step 2: Categorize the email - IMPORTANT: Reload email first to get latest data
+        email =
+          case summary_result do
+            {:ok, _updated_email} ->
+              Logger.info("Reloading email #{email_id} after summarization to get fresh data")
+              Repo.get!(Emails.Email, email_id) |> Repo.preload([:user, :category])
+
+            _ ->
+              email
+          end
+
         categorization_result = categorize_email(email)
 
         # Return overall result
@@ -54,11 +94,17 @@ defmodule JumpEmailCategorization.Workers.EmailProcessorWorker do
   end
 
   defp summarize_email(email) do
+    Logger.info("Starting summarization for email #{email.id}")
+
     case OpenAIClient.summarize_email(email.subject, email.body || email.snippet) do
       {:ok, summary} ->
+        Logger.info(
+          "OpenAI returned summary for email #{email.id}: #{String.slice(summary, 0..50)}..."
+        )
+
         case Emails.update_email(email, %{summary: summary}) do
           {:ok, updated_email} ->
-            Logger.info("Email #{email.id} summarized successfully")
+            Logger.info("Email #{email.id} summarized successfully and updated in DB")
             {:ok, updated_email}
 
           {:error, changeset} ->
@@ -74,6 +120,7 @@ defmodule JumpEmailCategorization.Workers.EmailProcessorWorker do
         {:ok, email}
 
       {:error, reason} ->
+        Logger.error("OpenAI summarization failed for email #{email.id}: #{inspect(reason)}")
         {:error, reason}
     end
   end

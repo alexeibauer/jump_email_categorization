@@ -16,6 +16,7 @@ defmodule JumpEmailCategorization.Emails do
     |> apply_filters(opts)
     |> order_by([e], desc: e.received_at)
     |> Repo.all()
+    |> Repo.preload(:category)
   end
 
   @doc """
@@ -23,7 +24,8 @@ defmodule JumpEmailCategorization.Emails do
   Options:
     - page: page number (default: 1)
     - page_size: number of emails per page (default: 30)
-    - category_id: filter by category
+    - category_id: filter by category ID
+    - category_name: filter by category name
     - gmail_account_id: filter by Gmail account
   """
   def list_emails_paginated(user_id, opts \\ []) do
@@ -49,6 +51,7 @@ defmodule JumpEmailCategorization.Emails do
       |> limit(^page_size)
       |> offset(^offset)
       |> Repo.all()
+      |> Repo.preload(:category)
 
     %{
       emails: emails,
@@ -75,6 +78,11 @@ defmodule JumpEmailCategorization.Emails do
     Enum.reduce(opts, query, fn
       {:category_id, category_id}, query ->
         where(query, [e], e.category_id == ^category_id)
+
+      {:category_name, category_name}, query ->
+        query
+        |> join(:inner, [e], c in assoc(e, :category))
+        |> where([e, c], c.name == ^category_name)
 
       {:gmail_account_id, account_id}, query ->
         where(query, [e], e.gmail_account_id == ^account_id)
@@ -118,12 +126,34 @@ defmodule JumpEmailCategorization.Emails do
   end
 
   @doc """
-  Updates an email.
+  Updates an email and broadcasts to PubSub.
   """
   def update_email(%Email{} = email, attrs) do
-    email
-    |> Email.changeset(attrs)
-    |> Repo.update()
+    require Logger
+
+    case email
+         |> Email.changeset(attrs)
+         |> Repo.update() do
+      {:ok, updated_email} ->
+        # Preload category association for the broadcast
+        updated_email = Repo.preload(updated_email, :category, force: true)
+
+        # Broadcast to user-specific topic
+        Logger.info(
+          "Broadcasting email update for email #{updated_email.id} to user #{updated_email.user_id}"
+        )
+
+        Phoenix.PubSub.broadcast(
+          JumpEmailCategorization.PubSub,
+          "user_emails:#{updated_email.user_id}",
+          {:email_updated, updated_email}
+        )
+
+        {:ok, updated_email}
+
+      error ->
+        error
+    end
   end
 
   @doc """

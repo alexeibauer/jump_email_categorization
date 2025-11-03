@@ -55,6 +55,8 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
       |> assign(:category_to_delete, "")
       |> assign(:fetching_accounts, MapSet.new())
       |> assign(:loading_message, nil)
+      |> assign(:categorizing_emails, MapSet.new())
+      |> assign(:summarizing_emails, MapSet.new())
 
     {:ok, socket}
   end
@@ -89,6 +91,46 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
   def handle_info({:new_email, _email}, socket) do
     # Reload emails when a new email is created
     socket = reload_emails(socket)
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:email_updated, updated_email}, socket) do
+    require Logger
+
+    Logger.info(
+      "LiveView received email_updated for email #{updated_email.id}, summary present: #{!!updated_email.summary}, category: #{inspect(updated_email.category)}"
+    )
+
+    # Update the email in the list
+    emails =
+      Enum.map(socket.assigns.emails, fn email ->
+        if email.id == updated_email.id, do: updated_email, else: email
+      end)
+
+    # Also update selected_email if it's the one being updated
+    selected_email =
+      if socket.assigns.selected_email && socket.assigns.selected_email.id == updated_email.id do
+        updated_email
+      else
+        socket.assigns.selected_email
+      end
+
+    # Remove from processing sets
+    categorizing_emails = MapSet.delete(socket.assigns.categorizing_emails, updated_email.id)
+    summarizing_emails = MapSet.delete(socket.assigns.summarizing_emails, updated_email.id)
+
+    Logger.info(
+      "Updated email list, removed from processing sets. Summarizing: #{MapSet.size(summarizing_emails)}, Categorizing: #{MapSet.size(categorizing_emails)}"
+    )
+
+    socket =
+      socket
+      |> assign(:emails, emails)
+      |> assign(:selected_email, selected_email)
+      |> assign(:categorizing_emails, categorizing_emails)
+      |> assign(:summarizing_emails, summarizing_emails)
+
     {:noreply, socket}
   end
 
@@ -263,7 +305,14 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
 
   @impl true
   def handle_event("select-category", %{"category" => category_name}, socket) do
-    {:noreply, assign(socket, :selected_category, category_name)}
+    # Reset to page 1 when switching categories
+    socket =
+      socket
+      |> assign(:selected_category, category_name)
+      |> update(:pagination, fn pagination -> %{pagination | page: 1} end)
+      |> reload_emails()
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -312,6 +361,7 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
               |> assign(:selected_category, "")
               |> assign(:show_delete_category_modal, false)
               |> assign(:category_to_delete, "")
+              |> reload_emails()
               |> put_flash(:info, "Category deleted successfully")
 
             {:noreply, socket}
@@ -384,10 +434,78 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
     end
   end
 
+  @impl true
+  def handle_event("categorize-email", %{"id" => email_id_str}, socket) do
+    email_id = String.to_integer(email_id_str)
+
+    # Add email to categorizing set
+    categorizing_emails = MapSet.put(socket.assigns.categorizing_emails, email_id)
+
+    # Enqueue job to categorize email
+    case %{email_id: email_id, action: "categorize"}
+         |> JumpEmailCategorization.Workers.EmailProcessorWorker.new()
+         |> Oban.insert() do
+      {:ok, _job} ->
+        IO.puts("✓ Categorization job enqueued for email #{email_id}")
+
+        socket =
+          socket
+          |> assign(:categorizing_emails, categorizing_emails)
+          |> put_flash(:info, "Categorizing email...")
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        IO.puts("✗ Failed to enqueue categorization job: #{inspect(reason)}")
+
+        socket =
+          socket
+          |> put_flash(:error, "Failed to enqueue categorization job")
+
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("summarize-email", %{"id" => email_id_str}, socket) do
+    require Logger
+    email_id = String.to_integer(email_id_str)
+
+    Logger.info("Summarize-email event triggered for email #{email_id}")
+
+    # Add email to summarizing set
+    summarizing_emails = MapSet.put(socket.assigns.summarizing_emails, email_id)
+
+    # Enqueue job to summarize email
+    case %{email_id: email_id, action: "summarize"}
+         |> JumpEmailCategorization.Workers.EmailProcessorWorker.new()
+         |> Oban.insert() do
+      {:ok, _job} ->
+        Logger.info("✓ Summarization job enqueued for email #{email_id}")
+
+        socket =
+          socket
+          |> assign(:summarizing_emails, summarizing_emails)
+          |> put_flash(:info, "Summarizing email...")
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        Logger.error("✗ Failed to enqueue summarization job: #{inspect(reason)}")
+
+        socket =
+          socket
+          |> put_flash(:error, "Failed to enqueue summarization job")
+
+        {:noreply, socket}
+    end
+  end
+
   defp reload_emails(socket) do
     user = socket.assigns.current_scope.user
     current_page = socket.assigns.pagination.page
     selected_account = socket.assigns.selected_account
+    selected_category = socket.assigns.selected_category
 
     # Build filter options
     filter_opts = [page: current_page, page_size: 30]
@@ -398,6 +516,14 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
           {account_id, _} -> Keyword.put(filter_opts, :gmail_account_id, account_id)
           :error -> filter_opts
         end
+      else
+        filter_opts
+      end
+
+    # Add category filter if selected
+    filter_opts =
+      if selected_category != "" do
+        Keyword.put(filter_opts, :category_name, selected_category)
       else
         filter_opts
       end
@@ -472,6 +598,8 @@ defmodule JumpEmailCategorizationWeb.HomeLive do
           category_to_delete={@category_to_delete}
           loading_message={@loading_message}
           pagination={@pagination}
+          categorizing_emails={@categorizing_emails}
+          summarizing_emails={@summarizing_emails}
         />
 
         <%!-- Right Column: Email detail --%>

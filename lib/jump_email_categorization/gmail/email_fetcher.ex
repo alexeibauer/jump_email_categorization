@@ -191,6 +191,10 @@ defmodule JumpEmailCategorization.Gmail.EmailFetcher do
   end
 
   defp enqueue_email_processing(email) do
+    Logger.info(
+      "Enqueueing automatic processing (both summarize and categorize) for email #{email.id}"
+    )
+
     %{email_id: email.id}
     |> JumpEmailCategorization.Workers.EmailProcessorWorker.new()
     |> Oban.insert()

@@ -103,6 +103,8 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
   attr :category_to_delete, :string, default: ""
   attr :loading_message, :string, default: nil
   attr :pagination, :map, default: nil
+  attr :categorizing_emails, :any, default: []
+  attr :summarizing_emails, :any, default: []
 
   def email_list(assigns) do
     ~H"""
@@ -114,8 +116,8 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
               class="select select-bordered w-full"
               name="category"
             >
-              <option value="" disabled selected={@selected_category == ""}>
-                Choose a category...
+              <option value="" selected={@selected_category == ""}>
+                All categories
               </option>
               <option
                 :for={category <- @categories}
@@ -146,7 +148,7 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
               (Delete)
             </a>
           <% else %>
-            Select a category to view emails
+            Showing all emails
           <% end %>
         </p>
       </div>
@@ -184,12 +186,63 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
                     phx-click="select-email"
                     phx-value-id={email.id}
                   >
-                    <h3 class="font-bold text-base mb-2 truncate">
-                      {email.subject || "(No subject)"}
-                    </h3>
-                    <p class="text-sm text-base-content/70 line-clamp-2 break-words">
-                      {email.summary || email.snippet || "No preview available"}
-                    </p>
+                    <div class="flex items-baseline gap-2 mb-1">
+                      <h3 class="font-bold text-base truncate flex-1">
+                        {email.subject || "(No subject)"}
+                      </h3>
+                      <span
+                        :if={email.received_at}
+                        class="text-xs text-base-content/60 whitespace-nowrap"
+                      >
+                        {format_email_date(email.received_at)}
+                      </span>
+                    </div>
+
+                    <%!-- Category info --%>
+                    <div class="mb-2">
+                      <%= if email.category do %>
+                        <span class="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                          {email.category.name}
+                        </span>
+                      <% else %>
+                        <%= if email.id in @categorizing_emails do %>
+                          <span class="text-xs text-base-content/70">
+                            <span class="loading loading-spinner loading-xs"></span> Categorizing...
+                          </span>
+                        <% else %>
+                          <button
+                            type="button"
+                            class="text-xs text-primary hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                            phx-click="categorize-email"
+                            phx-value-id={email.id}
+                          >
+                            Uncategorized. Click here to categorize now
+                          </button>
+                        <% end %>
+                      <% end %>
+                    </div>
+
+                    <%!-- Summary info --%>
+                    <%= if email.summary do %>
+                      <p class="text-sm text-base-content/70 line-clamp-2 break-words">
+                        {email.summary}
+                      </p>
+                    <% else %>
+                      <%= if email.id in @summarizing_emails do %>
+                        <p class="text-sm text-base-content/70">
+                          <span class="loading loading-spinner loading-xs"></span> Summarizing...
+                        </p>
+                      <% else %>
+                        <button
+                          type="button"
+                          class="text-sm text-primary hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                          phx-click="summarize-email"
+                          phx-value-id={email.id}
+                        >
+                          Summary not available. Click here to summarize now.
+                        </button>
+                      <% end %>
+                    <% end %>
                   </div>
                 </div>
               </div>
@@ -344,6 +397,22 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
   end
 
   defp translate_error(msg) when is_binary(msg), do: msg
+
+  # Helper function to format email date (e.g., "Sun, Nov 2nd 2025")
+  defp format_email_date(datetime) do
+    day_suffix =
+      case Calendar.strftime(datetime, "%d") |> String.to_integer() do
+        d when d in [1, 21, 31] -> "st"
+        d when d in [2, 22] -> "nd"
+        d when d in [3, 23] -> "rd"
+        _ -> "th"
+      end
+
+    day = Calendar.strftime(datetime, "%d") |> String.to_integer() |> to_string()
+
+    Calendar.strftime(datetime, "%a, %b ") <>
+      day <> day_suffix <> Calendar.strftime(datetime, " %Y")
+  end
 
   @doc """
   Renders the email detail view on the right.
