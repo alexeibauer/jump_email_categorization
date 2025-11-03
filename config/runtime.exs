@@ -108,7 +108,11 @@ if config_env() == :prod do
     username: System.get_env("SMTP_USERNAME"),
     password: System.get_env("SMTP_PASSWORD"),
     port: String.to_integer(System.get_env("SMTP_PORT") || "587"),
+    ssl: false,
     tls: :always,
+    tls_options: [
+      cacerts: :public_key.cacerts_get()
+    ],
     auth: :always,
     retries: 2
 end

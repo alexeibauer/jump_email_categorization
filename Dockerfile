@@ -43,9 +43,10 @@ RUN mix release
 # Start a new build stage
 FROM debian:bookworm-slim AS app
 
-# Install runtime dependencies
+# Cache buster: 2025-11-03-03:48-fix-tls-certs
+# Install runtime dependencies (including ca-certificates for TLS/SSL)
 RUN apt-get update && \
-    apt-get install -y libstdc++6 openssl locales && \
+    apt-get install -y libstdc++6 openssl locales ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
     sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
