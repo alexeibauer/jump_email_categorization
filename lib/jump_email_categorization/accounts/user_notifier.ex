@@ -9,7 +9,7 @@ defmodule JumpEmailCategorization.Accounts.UserNotifier do
     email =
       new()
       |> to(recipient)
-      |> from({"JumpEmailCategorization", "contact@example.com"})
+      |> from({"JumpEmailCategorization", "no-reply@demosandbox.net"})
       |> subject(subject)
       |> text_body(body)
 

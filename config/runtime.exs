@@ -101,19 +101,14 @@ if config_env() == :prod do
 
   # ## Configuring the mailer
   #
-  # In production you need to configure the mailer to use a different adapter.
-  # Here is an example configuration for Mailgun:
-  #
-  #     config :jump_email_categorization, JumpEmailCategorization.Mailer,
-  #       adapter: Swoosh.Adapters.Mailgun,
-  #       api_key: System.get_env("MAILGUN_API_KEY"),
-  #       domain: System.get_env("MAILGUN_DOMAIN")
-  #
-  # Most non-SMTP adapters require an API client. Swoosh supports Req, Hackney,
-  # and Finch out-of-the-box. This configuration is typically done at
-  # compile-time in your config/prod.exs:
-  #
-  #     config :swoosh, :api_client, Swoosh.ApiClient.Req
-  #
-  # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
+  # In production, configure SMTP for sending emails
+  config :jump_email_categorization, JumpEmailCategorization.Mailer,
+    adapter: Swoosh.Adapters.SMTP,
+    relay: System.get_env("SMTP_RELAY"),
+    username: System.get_env("SMTP_USERNAME"),
+    password: System.get_env("SMTP_PASSWORD"),
+    port: String.to_integer(System.get_env("SMTP_PORT") || "587"),
+    tls: :always,
+    auth: :always,
+    retries: 2
 end

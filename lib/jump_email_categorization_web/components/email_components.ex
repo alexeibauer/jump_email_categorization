@@ -634,8 +634,8 @@ defmodule JumpEmailCategorizationWeb.EmailComponents do
         <p class="py-4">
           Are you sure of deleting {@selected_count} {if @selected_count == 1,
             do: "email",
-            else: "emails"}?
-          <br /><span class="font-semibold text-error">
+            else: "emails"}? <br />
+          <span class="font-semibold text-error">
             This will also move the email to Gmail's Trash folder.
           </span>
         </p>
